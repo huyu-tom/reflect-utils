@@ -36,18 +36,30 @@ public class ReflectFieldInvokerUtils {
 
     // 1. 优先尝试 Unsafe 模式
     if (UnsafeUtils.isSupportUnsafe()) {
-      return createUnsafeInvoker(field);
+      try {
+        return createUnsafeInvoker(field);
+      } catch (Throwable e) {
+        //忽略
+      }
     }
 
     // 2. 尝试 VarHandle 模式 (需要JDK1.9以上)
     if (isVarHandleAvailable()) {
-      return createVarHandleInvoker(field);
+      try {
+        return createVarHandleInvoker(field);
+      } catch (Throwable e) {
+
+      }
     }
 
     // 3. 对于公共属性
-    if (field.accessFlags().contains(AccessFlag.PUBLIC) && isSupportClassFileAPI()) {
-      //需要通过ClassFile API 创建 FieldReflectInvoker实现类
-      return createDirectInvoker(field);
+    if (!field.accessFlags().contains(AccessFlag.PRIVATE) && isSupportClassFileAPI()) {
+      try {
+        //需要通过ClassFile API 创建 FieldReflectInvoker实现类
+        return createDirectInvoker(field);
+      } catch (Throwable e) {
+
+      }
     }
 
     // 4. 默认使用标准反射模式

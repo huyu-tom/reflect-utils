@@ -51,8 +51,8 @@ public class ReflectMethodInvokerUtils {
       throw new IllegalArgumentException("Method cannot be null");
     }
 
-    // 公共方法,并且支持ClassFile API
-    if (isPublicMethod(method) && ClassFileUtils.isSupportClassFileAPI()) {
+    // 非私有方法,并且支持ClassFile API
+    if (isLoopMethod(method) && ClassFileUtils.isSupportClassFileAPI()) {
       try {
         return (T) createDirectMethodInvoker(method);
       } catch (Throwable e) {
@@ -80,7 +80,7 @@ public class ReflectMethodInvokerUtils {
    * @param method 目标方法
    * @return 是否为公共方法
    */
-  private static boolean isPublicMethod(Method method) {
+  private static boolean isLoopMethod(Method method) {
     return (!Modifier.isPrivate(method.getModifiers())) && Modifier.isPublic(
         method.getDeclaringClass().getModifiers());
   }

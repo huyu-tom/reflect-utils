@@ -469,7 +469,7 @@ public class FixedLambdaReflectUtils {
           methodType(lambdaMethod.getReturnType(), lambdaMethod.getParameterTypes()),
           // handle
           handle,
-          // 返回值 类型， 参数
+          // 返回值 类型，参数
           methodType(method.getReturnType(), method.getDeclaringClass(),
               boxPrimitiveTypes(method.getParameterTypes())));
     } catch (Throwable e) {
@@ -485,6 +485,9 @@ public class FixedLambdaReflectUtils {
 
 
   public static Class<?> boxPrimitiveType(Class<?> type) {
+    if (!type.isPrimitive()) {
+      return type;
+    }
     if (type == byte.class) {
       return Byte.class;
     } else if (type == short.class) {
@@ -503,8 +506,7 @@ public class FixedLambdaReflectUtils {
       return Character.class;
     } else if (type == void.class) {
       return Void.class;
-    } else {
-      return type; // 非基本类型原样返回
     }
+    return type;
   }
 }

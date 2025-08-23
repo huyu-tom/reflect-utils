@@ -231,7 +231,7 @@ public class ClassFileUtils {
 
 
   /**
-   * ：参数转换（数组/引���/基本类型拆箱）
+   * ：参数转换（数组/引用类型/基本类型拆箱）
    *
    * @param codeBuilder
    * @param paramType
@@ -391,10 +391,7 @@ public class ClassFileUtils {
    */
   public static void saveClassToClasspath(String fqn, byte[] bytecode) {
     try {
-
-//      if (true) {
-//        return;
-//      }
+      //未来开启AOT模式的时候,需要写入到不同磁盘的磁盘上,收集生成的类
 
       // 获取当前工作目录下的 target/classes 目录
       String workingDir = System.getProperty("user.dir");
