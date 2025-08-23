@@ -9,6 +9,7 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodHandles.Lookup;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.Arrays;
 import java.util.function.BiFunction;
 import java.util.function.Function;
@@ -404,7 +405,17 @@ public class FixedLambdaReflectUtils {
 
   public static MethodReflectInvoker createLambda(Method findMethod) throws Throwable {
     // step1: method => methodHandle
-    Lookup lookup = MethodHandles.lookup();
+
+    Lookup lookup;
+    if (Modifier.isStatic(findMethod.getModifiers())) {
+      // 静态方法
+      lookup = MethodHandles.lookup();
+    } else {
+      // 实例方法
+      lookup = MethodHandles.privateLookupIn(findMethod.getDeclaringClass(),
+          MethodHandles.lookup());
+    }
+
     MethodHandle handle = lookup.unreflect(findMethod);
 
     // step2: 获取方法对应的Lambda的包装类和方法

@@ -1,8 +1,11 @@
 package com.huyu.test.field;
 
 import com.huyu.field.ReflectFieldInvokerUtils;
+import com.huyu.method.ReflectMethodInvokerUtils;
+import com.huyu.method.invoker.MethodReflectInvoker;
 import com.huyu.service.impl.XxServiceImpl;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 
 public class TestReflectInvokerUtils {
 
@@ -30,5 +33,18 @@ public class TestReflectInvokerUtils {
     fieldInvoker.set(service, 400L);
     System.out.println("预期结果是: 400 , 真实结果是: " + fieldInvoker.get(service));
 
+    //调用非私有方法
+    Method notPrivateAdd = service.getClass().getDeclaredMethod("notPrivateAdd");
+    notPrivateAdd.setAccessible(true);
+    MethodReflectInvoker notPrivateMethodInvoker = ReflectMethodInvokerUtils.createMethodInvoker(
+        notPrivateAdd);
+    System.out.println(notPrivateMethodInvoker.invoke(service));
+
+    //调用非私有静态方法
+    Method testStatic = service.getClass().getDeclaredMethod("staticAdd");
+    testStatic.setAccessible(true);
+    MethodReflectInvoker staticMethodInvoker = ReflectMethodInvokerUtils.createMethodInvoker(
+        testStatic);
+    System.out.println(staticMethodInvoker.invoke(service));
   }
 }

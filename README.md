@@ -26,7 +26,7 @@ public class Xxxx implements MethodReflectInvoker<> {
 }
 ```
 
-> 注意: 这种方式只支持public方法调用,并且每个method都会生成唯一一个类定义
+> 注意: 这种方式只支持非私有方法调用,并且每个method都会生成唯一一个类定义
 
 ##### 基准测试结果:
 
@@ -53,7 +53,7 @@ MethodBenchmark.hasStaticLambdaMethodInvokerCall     avgt    6   0.615 ± 0.006 
 
 ##### 方式3: 通过ClassFile动态生成实现类, 实现方案是 : ReflectFieldInvokerUtils.createDirectFieldInvoker()
 
-> 注意: 这种方式只支持public属性调用,并且每个属性都会生成唯一一个类定义
+> 注意: 这种方式只支持非私有属性调用,并且每个属性都会生成唯一一个类定义
 
 ##### 方式4: 通过Field进行属性设置,默认的实现类是: DefaultReflectFieldInvoker
 

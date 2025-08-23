@@ -1,5 +1,7 @@
 package com.huyu.field;
 
+import static com.huyu.utils.ClassFileUtils.isSupportClassFileAPI;
+
 import com.huyu.field.invoker.FieldReflectInvoker;
 import com.huyu.field.invoker.impl.DefaultReflectFieldInvoker;
 import com.huyu.field.invoker.impl.UnsafeReflectFieldInvoker;
@@ -17,9 +19,6 @@ import java.lang.reflect.Field;
 
 
 public class ReflectFieldInvokerUtils {
-
-
-  public static final Class<?> PACKAGE_CLASS = ReflectFieldInvokerUtils.class;
 
 
   /**
@@ -57,20 +56,6 @@ public class ReflectFieldInvokerUtils {
 
 
   /**
-   * 检查 ClassFile API 是否可用 (JDK 22+)
-   *
-   * @return true if ClassFile API is available, false otherwise
-   */
-  private static boolean isSupportClassFileAPI() {
-    try {
-      Class.forName("java.lang.classfile.ClassFile");
-      return true;
-    } catch (ClassNotFoundException | Error e) {
-      return false;
-    }
-  }
-
-  /**
    * <pre>
    * 使用 ClassFile API 创建 FieldReflectInvoker 实现类
    *
@@ -97,9 +82,9 @@ public class ReflectFieldInvokerUtils {
       throw new IllegalArgumentException("Field cannot be null");
     }
 
-    if (!field.accessFlags().contains(AccessFlag.PUBLIC)) {
+    if (field.accessFlags().contains(AccessFlag.PRIVATE)) {
       throw new IllegalArgumentException(
-          "Field must be public for ClassFile API invoker: " + field);
+          "Field must not be private for ClassFile API invoker: " + field);
     }
 
     if (!isSupportClassFileAPI()) {
@@ -136,14 +121,15 @@ public class ReflectFieldInvokerUtils {
    */
   private static Class<?> generateFieldInvokerClass(Field field) {
     //生成的全类名
-    String fullClassName = ClassFileUtils.getFullClassName(field, PACKAGE_CLASS) + "$fieldInvoker";
+    String fullClassName =
+        ClassFileUtils.getFullClassName(field, field.getDeclaringClass()) + "_fieldInvoker";
 
     //字段所在类
     Class<?> declaringClass = field.getDeclaringClass();
 
     Class<?> existingClass = null;
     try {
-      existingClass = PACKAGE_CLASS.getClassLoader().loadClass(fullClassName);
+      existingClass = field.getDeclaringClass().getClassLoader().loadClass(fullClassName);
     } catch (ClassNotFoundException ignored) {
       // 类不存在，继续执行
     }
@@ -296,7 +282,7 @@ public class ReflectFieldInvokerUtils {
     ClassFileUtils.saveClassToClasspath(fullClassName, classBytes);
 
     //加载定义类
-    return ClassFileUtils.loadClass(classBytes, fullClassName, PACKAGE_CLASS);
+    return ClassFileUtils.loadClass(classBytes, fullClassName, field.getDeclaringClass());
   }
 
   /**

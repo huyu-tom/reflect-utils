@@ -14,6 +14,7 @@ import static java.lang.invoke.MethodType.methodType;
 
 import com.huyu.method.invoker.MethodReflectInvoker;
 import com.huyu.method.invoker.impl.DefaultMethodReflectInvoker;
+import com.huyu.utils.AotUtils;
 import com.huyu.utils.ClassFileUtils;
 import java.lang.classfile.ClassFile;
 import java.lang.classfile.CodeBuilder;
@@ -35,14 +36,6 @@ import java.lang.reflect.Modifier;
  */
 public class ReflectMethodInvokerUtils {
 
-  public static final Class<?> PACKAGE_CLASS = MethodReflectInvoker.class;
-
-
-  /**
-   * AOT模式标识，默认为false（可根据实际环境配置）
-   */
-  private static final boolean IS_AOT_MODE = Boolean.parseBoolean(
-      System.getProperty("spring.aot.enabled", "false"));
 
   /**
    * 构建反射执行器
@@ -53,23 +46,31 @@ public class ReflectMethodInvokerUtils {
    * @throws Throwable 当创建实例失败时抛出
    */
   @SuppressWarnings({"unchecked", "rawtypes"})
-  public static <T extends MethodReflectInvoker> T createMethodInvoker(Method method)
-      throws Throwable {
+  public static <T extends MethodReflectInvoker> T createMethodInvoker(Method method) {
     if (method == null) {
       throw new IllegalArgumentException("Method cannot be null");
     }
 
-    // 判断方法类型并选择相应的生成策略
-    if (isPublicMethod(method)) {
-      // 情况1：公共方法，直接调用（无属性）
-      return (T) createDirectMethodInvoker(method);
-    } else if (!IS_AOT_MODE) {
-      // 情况2：非公共方法且非AOT模式，使用Lambda（有BaseReflectLambda属性）
-      return (T) createLambdaMethodInvoker(method);
-    } else {
-      // 情况3：AOT模式，使用反射调用（有Method属性）
-      return (T) createReflectMethodInvoker(method);
+    // 公共方法,并且支持ClassFile API
+    if (isPublicMethod(method) && ClassFileUtils.isSupportClassFileAPI()) {
+      try {
+        return (T) createDirectMethodInvoker(method);
+      } catch (Throwable e) {
+        //忽略
+      }
     }
+
+    //AOT模式完全不支持lambda的方式调用
+    if (!AotUtils.inNativeImage()) {
+      try {
+        return (T) createLambdaMethodInvoker(method);
+      } catch (Throwable e) {
+
+      }
+    }
+
+    // 情况3：兜底模式,使用反射调用（有Method属性）
+    return (T) createReflectMethodInvoker(method);
   }
 
 
@@ -80,7 +81,7 @@ public class ReflectMethodInvokerUtils {
    * @return 是否为公共方法
    */
   private static boolean isPublicMethod(Method method) {
-    return Modifier.isPublic(method.getModifiers()) && Modifier.isPublic(
+    return (!Modifier.isPrivate(method.getModifiers())) && Modifier.isPublic(
         method.getDeclaringClass().getModifiers());
   }
 
@@ -93,7 +94,17 @@ public class ReflectMethodInvokerUtils {
    */
   @SuppressWarnings("rawtypes")
   public static MethodReflectInvoker createDirectMethodInvoker(Method method) throws Throwable {
-    String fullClassName = getFullClassName(method, PACKAGE_CLASS) + "$MethodDirect";
+
+    if (method == null) {
+      throw new IllegalArgumentException("Method cannot be null");
+    }
+
+    if (!ClassFileUtils.isSupportClassFileAPI()) {
+      throw new IllegalStateException(
+          "ClassFile API is not supported. Please check your JDK version.");
+    }
+
+    String fullClassName = getFullClassName(method, method.getDeclaringClass()) + "_MethodDirect";
 
     Class<?> declaringClass = method.getDeclaringClass();
 
@@ -134,7 +145,7 @@ public class ReflectMethodInvokerUtils {
       saveClassToClasspath(fullClassName, classBytes);
 
       // 加载并实例化类
-      existingClass = loadClass(classBytes, fullClassName, PACKAGE_CLASS);
+      existingClass = loadClass(classBytes, fullClassName, method.getDeclaringClass());
     }
 
     return (MethodReflectInvoker) existingClass.getDeclaredConstructor().newInstance();
@@ -217,8 +228,8 @@ public class ReflectMethodInvokerUtils {
   private static MethodReflectInvoker doCreateLambdaInvoker(Method method, Class<?> fnIf)
       throws Throwable {
     Class<?> decl = method.getDeclaringClass();
-
     MethodHandles.Lookup implLookup = MethodHandles.privateLookupIn(decl, MethodHandles.lookup());
+
     var mt = methodType(method.getReturnType(), method.getParameterTypes());
     MethodHandle impl;
     int mods = method.getModifiers();
@@ -281,7 +292,7 @@ public class ReflectMethodInvokerUtils {
     Class<?> declaring = method.getDeclaringClass();
 
     //完整的类名
-    String fullClassName = getFullClassName(method, PACKAGE_CLASS);
+    String fullClassName = getFullClassName(method, method.getDeclaringClass());
 
     // 检查类是否已存在
     try {
@@ -300,7 +311,7 @@ public class ReflectMethodInvokerUtils {
     saveClassToClasspath(getPkg(method.getDeclaringClass()), bytecode);
 
     // 加载生成的字节码
-    return loadClass(bytecode, fullClassName, PACKAGE_CLASS);
+    return loadClass(bytecode, fullClassName, method.getDeclaringClass());
   }
 
   /**

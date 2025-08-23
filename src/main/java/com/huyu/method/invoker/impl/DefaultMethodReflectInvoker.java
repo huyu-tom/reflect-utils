@@ -4,7 +4,7 @@ import com.huyu.method.invoker.MethodReflectInvoker;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
-public class DefaultMethodReflectInvoker implements MethodReflectInvoker<Object, Object> {
+public final class DefaultMethodReflectInvoker implements MethodReflectInvoker<Object, Object> {
 
   private final Method method;
 

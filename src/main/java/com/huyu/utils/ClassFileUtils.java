@@ -16,6 +16,21 @@ import java.lang.reflect.Method;
  */
 public class ClassFileUtils {
 
+  public static final boolean SUPPORT_CLASS_FILE_API;
+
+  static {
+    boolean isSupport = true;
+    try {
+      Class.forName("java.lang.classfile.ClassFile");
+    } catch (ClassNotFoundException e) {
+      isSupport = false;
+    }
+    SUPPORT_CLASS_FILE_API = isSupport;
+  }
+
+  public static boolean isSupportClassFileAPI() {
+    return SUPPORT_CLASS_FILE_API;
+  }
 
   public static String getFullClassName(Method method, Class<?> packageClass) {
     // 如果是Java类，使用ClassFileUtils的包名，否则使用declaring的包名
@@ -34,19 +49,19 @@ public class ClassFileUtils {
   public static String getUniSimpleClassName(Method method) {
     Class<?> declaring = method.getDeclaringClass();
     final String methodSignature =
-        method.getReturnType().getCanonicalName() + "$" + method.getName() + "$"
-            + method.getParameterCount() + "$" + java.util.Arrays.stream(method.getParameterTypes())
-            .map(Class::getCanonicalName).collect(java.util.stream.Collectors.joining("$"));
+        method.getReturnType().getCanonicalName() + "_" + method.getName() + "_"
+            + method.getParameterCount() + "_" + java.util.Arrays.stream(method.getParameterTypes())
+            .map(Class::getCanonicalName).collect(java.util.stream.Collectors.joining("_"));
     final String simpleClassName = (declaring.getSimpleName() + "$" + methodSignature).replace(".",
-        "$");
+        "_");
     return simpleClassName;
   }
 
   public static String getUniSimpleClassName(Field field) {
     Class<?> declaring = field.getDeclaringClass();
-    final String fieldSignature = field.getName() + "$" + field.getType().getName();
+    final String fieldSignature = field.getName() + "_" + field.getType().getName();
     final String simpleClassName = (declaring.getSimpleName() + "$" + fieldSignature).replace(".",
-        "$");
+        "_");
     return simpleClassName;
   }
 

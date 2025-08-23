@@ -22,9 +22,31 @@ public class XxServiceImpl implements XxService<XxServiceImpl1> {
   public long cc;
   String aa;
 
+
+  static long staticAdd() {
+    int a = 1;
+    int b = 2;
+    int c = 8;
+    return a + b + c;
+  }
+
+   long notPrivateAdd() {
+    int a = 1;
+    int b = 2;
+    int c = 4;
+    return a + b + c;
+  }
+
   @Override
   public void remove(XxServiceImpl1 object) {
 
+  }
+
+  protected void test() {
+    int a = 1;
+    int b = 2;
+    int c = 3;
+    cc = a + b + c;
   }
 
   public long add(int a) {
