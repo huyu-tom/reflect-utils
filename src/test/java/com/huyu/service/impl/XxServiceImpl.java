@@ -23,14 +23,14 @@ public class XxServiceImpl implements XxService<XxServiceImpl1> {
   String aa;
 
 
-  static long staticAdd() {
+  public static long staticAdd(long d) {
     int a = 1;
     int b = 2;
     int c = 8;
     return a + b + c;
   }
 
-   long notPrivateAdd() {
+  long notPrivateAdd() {
     int a = 1;
     int b = 2;
     int c = 4;

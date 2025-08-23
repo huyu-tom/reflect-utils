@@ -25,6 +25,7 @@ import java.lang.invoke.CallSite;
 import java.lang.invoke.LambdaMetafactory;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
+import java.lang.reflect.AccessFlag;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 
@@ -61,7 +62,7 @@ public class ReflectMethodInvokerUtils {
     }
 
     //AOT模式完全不支持lambda的方式调用
-    if (!AotUtils.inNativeImage()) {
+    if (!AotUtils.inNativeImage() && !method.accessFlags().contains(AccessFlag.STATIC)) {
       try {
         return (T) createLambdaMethodInvoker(method);
       } catch (Throwable e) {
@@ -183,7 +184,8 @@ public class ReflectMethodInvokerUtils {
    *
    * </pre>
    *
-   * @param method 目标方法
+   * @param method   目标方法
+   * @param isStatic 是否采用固定参数调用
    * @return BaseReflectInvoker实例
    * @throws Throwable 创建失败时抛出
    */
@@ -192,8 +194,7 @@ public class ReflectMethodInvokerUtils {
       boolean fallback) throws Throwable {
     if (isStatic) {
       if (method.getParameterCount() > 10 && !fallback) {
-        throw new IllegalArgumentException(
-            "Static method with more than 10 parameters is not supported");
+        throw new IllegalArgumentException("method with more than 10 parameters is not supported");
       }
       return FixedLambdaReflectUtils.createLambda(method);
     }
@@ -209,6 +210,16 @@ public class ReflectMethodInvokerUtils {
    * @throws Throwable
    */
   public static MethodReflectInvoker createDynasticLambdaInvoker(Method method) throws Throwable {
+
+    if (method == null) {
+      throw new IllegalArgumentException("Method cannot be null");
+    }
+
+//    if (method.accessFlags().contains(AccessFlag.STATIC)) {
+//      throw new IllegalArgumentException(
+//          "Method is static, please use createMethodInvoker() method");
+//    }
+
     // step1:  生成函数式接口（定义到与声明类相同 ClassLoader/包中）
     Class<?> fnIf = createReflectLambdaFunctionInterface(method);
 
@@ -227,28 +238,60 @@ public class ReflectMethodInvokerUtils {
    */
   private static MethodReflectInvoker doCreateLambdaInvoker(Method method, Class<?> fnIf)
       throws Throwable {
+//    Class<?> decl = method.getDeclaringClass();
+//    MethodHandles.Lookup implLookup = MethodHandles.privateLookupIn(decl, MethodHandles.lookup());
+//
+//    var mt = methodType(method.getReturnType(), method.getParameterTypes());
+//    MethodHandle impl;
+//    int mods = method.getModifiers();
+//    if (Modifier.isStatic(mods)) {
+//      impl = implLookup.findStatic(decl, method.getName(), mt);
+//      // 为静态方法补一个接收者占位，以对齐 SAM 首参为 DeclaringClass 的要求
+//      impl = MethodHandles.dropArguments(impl, 0, decl);
+//    } else if (decl.isInterface() && method.isDefault()) {
+//      // 接口默认方法，使用 findSpecial
+//      impl = implLookup.findSpecial(decl, method.getName(), mt, decl);
+//    } else {
+//      // 普通实例方法
+//      impl = implLookup.findVirtual(decl, method.getName(), mt);
+//    }
+//
+//    // 3) 装配三个 MethodType
+//    // invokedType: () -> BaseReflectLambda (使用BaseReflectLambda接口类型)
+//    final var invokedType = methodType(fnIf);
+//
+//    // samMethodType: 抽象方法签名（接口上的 apply/accept：DeclaringClass + 参数列表）
+//    Class<?>[] samParams;
+//    if (method.getParameterCount() == 0) {
+//      samParams = new Class<?>[]{decl};
+//    } else {
+//      samParams = new Class<?>[method.getParameterCount() + 1];
+//      samParams[0] = decl;
+//      System.arraycopy(method.getParameterTypes(), 0, samParams, 1, method.getParameterCount());
+//    }
+//    final var samMethodType = methodType(method.getReturnType(), samParams);
+//
+//    // 4) 选择 SAM 名称并创建 CallSite
+//    boolean isVoid = method.getReturnType() == void.class;
+//    // SAM方法应该是apply或accept，因为这是我们生成的函数式接口中的抽象方法
+//    final String samName = isVoid ? "accept" : "apply";
+//
+//    // 使用生成的接口类进行 lookup，确保可以访问默认方法
+//    MethodHandles.Lookup fnIfLookup = MethodHandles.privateLookupIn(fnIf, MethodHandles.lookup());
+//
+//    // samMethodType应该是函数式接口方法的签名，即(DeclaringClass, paramTypes...)ReturnType
+//    // invokedType应该是() -> BaseReflectLambda
+//    final CallSite cs = LambdaMetafactory.metafactory(fnIfLookup, samName, invokedType,
+//        samMethodType, impl, samMethodType);
+//
+//    // 5) 获取目标工厂并创建实例
+//    return (MethodReflectInvoker) cs.getTarget().invoke();
+
     Class<?> decl = method.getDeclaringClass();
     MethodHandles.Lookup implLookup = MethodHandles.privateLookupIn(decl, MethodHandles.lookup());
 
     var mt = methodType(method.getReturnType(), method.getParameterTypes());
     MethodHandle impl;
-    int mods = method.getModifiers();
-    if (Modifier.isStatic(mods)) {
-      impl = implLookup.findStatic(decl, method.getName(), mt);
-      // 为静态方法补一个接收者占位，以对齐 SAM 首参为 DeclaringClass 的要求
-      impl = MethodHandles.dropArguments(impl, 0, decl);
-    } else if (decl.isInterface() && method.isDefault()) {
-      // 接口默认方法，使用 findSpecial
-      impl = implLookup.findSpecial(decl, method.getName(), mt, decl);
-    } else {
-      // 普通实例方法
-      impl = implLookup.findVirtual(decl, method.getName(), mt);
-    }
-
-    // 3) 装配三个 MethodType
-    // invokedType: () -> BaseReflectLambda (使用BaseReflectLambda接口类型)
-    final var invokedType = methodType(fnIf);
-
     // samMethodType: 抽象方法签名（接口上的 apply/accept：DeclaringClass + 参数列表）
     Class<?>[] samParams;
     if (method.getParameterCount() == 0) {
@@ -258,6 +301,45 @@ public class ReflectMethodInvokerUtils {
       samParams[0] = decl;
       System.arraycopy(method.getParameterTypes(), 0, samParams, 1, method.getParameterCount());
     }
+
+    int mods = method.getModifiers();
+    if (Modifier.isStatic(mods)) {
+      // 对于静态方法，我们需要调整 SAM 签名和实现方法的对应关系
+      impl = implLookup.findStatic(decl, method.getName(), mt);
+      // 调整 samParams，去掉第一个参数（因为静态方法不需要实例）
+      Class<?>[] staticSamParams = new Class<?>[samParams.length - 1];
+      System.arraycopy(samParams, 1, staticSamParams, 0, staticSamParams.length);
+      final var samMethodType = methodType(method.getReturnType(), staticSamParams);
+
+      // invokedType: () -> fnIf (使用函数式接口类型)
+      final var invokedType = methodType(fnIf);
+
+      // 选择 SAM 名称并创建 CallSite
+      boolean isVoid = method.getReturnType() == void.class;
+      // SAM方法应该是apply或accept，因为这是我们生成的函数式接口中的抽象方法
+      final String samName = isVoid ? "accept" : "apply";
+
+      // 使用生成的接口类进行 lookup，确保可以访问默认方法
+      MethodHandles.Lookup fnIfLookup = MethodHandles.privateLookupIn(fnIf, MethodHandles.lookup());
+
+      // 对于静态方法，samMethodType 应该与 impl 的类型匹配
+      final CallSite cs = LambdaMetafactory.metafactory(fnIfLookup, samName, invokedType,
+          samMethodType, impl, samMethodType);
+
+      // 获取目标工厂并创建实例
+      return (MethodReflectInvoker) cs.getTarget().invoke();
+    } else if (decl.isInterface() && method.isDefault()) {
+      // 接口默认方法，使用 findSpecial
+      impl = implLookup.findSpecial(decl, method.getName(), mt, decl);
+    } else {
+      // 普通实例方法
+      impl = implLookup.findVirtual(decl, method.getName(), mt);
+    }
+
+    // 3) 装配三个 MethodType
+    // invokedType: () -> fnIf (使用函数式接口类型)
+    final var invokedType = methodType(fnIf);
+
     final var samMethodType = methodType(method.getReturnType(), samParams);
 
     // 4) 选择 SAM 名称并创建 CallSite
@@ -269,12 +351,13 @@ public class ReflectMethodInvokerUtils {
     MethodHandles.Lookup fnIfLookup = MethodHandles.privateLookupIn(fnIf, MethodHandles.lookup());
 
     // samMethodType应该是函数式接口方法的签名，即(DeclaringClass, paramTypes...)ReturnType
-    // invokedType应该是() -> BaseReflectLambda
+    // invokedType应该是() -> fnIf
     final CallSite cs = LambdaMetafactory.metafactory(fnIfLookup, samName, invokedType,
         samMethodType, impl, samMethodType);
 
     // 5) 获取目标工厂并创建实例
     return (MethodReflectInvoker) cs.getTarget().invoke();
+
   }
 
   /**

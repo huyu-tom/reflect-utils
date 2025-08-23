@@ -41,10 +41,14 @@ public class TestReflectInvokerUtils {
     System.out.println(notPrivateMethodInvoker.invoke(service));
 
     //调用非私有静态方法
-    Method testStatic = service.getClass().getDeclaredMethod("staticAdd");
+    Method testStatic = service.getClass().getDeclaredMethod("staticAdd", long.class);
     testStatic.setAccessible(true);
     MethodReflectInvoker staticMethodInvoker = ReflectMethodInvokerUtils.createMethodInvoker(
         testStatic);
-    System.out.println(staticMethodInvoker.invoke(service));
+    System.out.println(staticMethodInvoker.invoke(service, 10L));
+
+    MethodReflectInvoker lambdaMethodInvoker = ReflectMethodInvokerUtils.createDynasticLambdaInvoker(
+        testStatic);
+    lambdaMethodInvoker.invoke(service, 10L);
   }
 }
