@@ -15,7 +15,9 @@
  */
 package com.huyu.service.impl;
 
-public class XxServiceImpl implements com.huyu.service.XxService<XxServiceImpl1> {
+import com.huyu.service.XxService;
+
+public class XxServiceImpl implements XxService<XxServiceImpl1> {
 
   public long cc;
   String aa;
@@ -85,7 +87,7 @@ public class XxServiceImpl implements com.huyu.service.XxService<XxServiceImpl1>
    */
   @Override
   public Long add(String username, String password, Long userId, Integer age, byte width,
-    long height, short length, int weight) {
+      long height, short length, int weight) {
     int a = 1;
     int b = 2;
     int c = 3;

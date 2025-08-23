@@ -34,14 +34,11 @@ public class OptimizedInvocationHandler implements InvocationHandler {
 
   private static final VarHandle LAMBDA_CACHE_VARHANDLE;
 
-  private static final VarHandle BUILD_ERROR_VARHANDLE;
 
   static {
     try {
       LAMBDA_CACHE_VARHANDLE = MethodHandles.lookup()
-          .findVarHandle(OptimizedInvocationHandler.class, "lambdaCallCacheMap", Map.class);
-      BUILD_ERROR_VARHANDLE = MethodHandles.lookup()
-          .findVarHandle(OptimizedInvocationHandler.class, "buildLambdaErrorMap", Map.class);
+          .findVarHandle(OptimizedInvocationHandler.class, "invokerMap", Map.class);
     } catch (NoSuchFieldException | IllegalAccessException e) {
       throw new RuntimeException(e);
     }
@@ -56,17 +53,11 @@ public class OptimizedInvocationHandler implements InvocationHandler {
   /**
    * 基于 LambdaMetafactory 生成的缓存
    */
-  private Map<Method, MethodReflectInvoker> lambdaCallCacheMap = Collections.emptyMap();
+  private Map<Method, MethodReflectInvoker> invokerMap = Collections.emptyMap();
 
 
   /**
-   * 构建 Lambda 失败的 method 记录
-   */
-  private Map<Method, Boolean> buildLambdaErrorMap = Collections.emptyMap();
-
-
-  /**
-   * 快速模式
+   * /** 快速模式
    */
   private final boolean fast;
 
@@ -92,24 +83,14 @@ public class OptimizedInvocationHandler implements InvocationHandler {
 
 
   private Object fastInvoke(Object proxy, Method method, Object[] args) throws Throwable {
-    MethodReflectInvoker invoker = lambdaCallCacheMap.get(method);
-    final Boolean buildError = buildLambdaErrorMap.get(method);
-    if (buildError != null) {
-      return method.invoke(target, args);
+    MethodReflectInvoker invoker = invokerMap.get(method);
+    if (invoker != null) {
+      return invoker.invoke(target, args);
     }
-    try {
-      invoker = ReflectMethodInvokerUtils.createMethodInvoker(method);
-    } catch (Throwable e) {
-      //可能参数超过了我设定的最大个数,就直接调用反射
-      final Map<Method, Boolean> buildErrorMap = new HashMap<>(buildLambdaErrorMap);
-      buildErrorMap.put(method, Boolean.TRUE);
-      BUILD_ERROR_VARHANDLE.setVolatile(this, buildErrorMap);
-      return method.invoke(target, args);
-    }
-    final Map<Method, Object> newCache = new HashMap<>(lambdaCallCacheMap);
+    invoker = ReflectMethodInvokerUtils.createMethodInvoker(method);
+    final Map<Method, Object> newCache = new HashMap<>(invokerMap);
     newCache.put(method, invoker);
     LAMBDA_CACHE_VARHANDLE.setVolatile(this, newCache);
     return invoker.invoke(target, args);
   }
-
 }

@@ -93,7 +93,7 @@ public class ReflectMethodInvokerUtils {
    */
   @SuppressWarnings("rawtypes")
   public static MethodReflectInvoker createDirectMethodInvoker(Method method) throws Throwable {
-    String fullClassName = getFullClassName(method, PACKAGE_CLASS) + "$Direct";
+    String fullClassName = getFullClassName(method, PACKAGE_CLASS) + "$MethodDirect";
 
     Class<?> declaringClass = method.getDeclaringClass();
 
@@ -383,7 +383,14 @@ public class ReflectMethodInvokerUtils {
           if (Modifier.isStatic(method.getModifiers())) {
             codeb.invokestatic(targetTypeDesc, method.getName(), getMethodTypeDesc(method));
           } else {
-            codeb.invokevirtual(targetTypeDesc, method.getName(), getMethodTypeDesc(method));
+            Class<?> declaringClass = method.getDeclaringClass();
+            if (declaringClass.isInterface()) {
+              // 接口方法使用 invokeinterface
+              codeb.invokeinterface(targetTypeDesc, method.getName(), getMethodTypeDesc(method));
+            } else {
+              // 普通类方法使用 invokevirtual
+              codeb.invokevirtual(targetTypeDesc, method.getName(), getMethodTypeDesc(method));
+            }
           }
 
           ClassFileUtils.generateReturnValueBoxing(codeb, returnType);

@@ -39,13 +39,13 @@ import org.openjdk.jmh.infra.Blackhole;
 @Measurement(iterations = 3, time = 2)
 public class ProxyBenchmark {
 
-  private XxServiceImpl target;
+  private XxService target;
   private XxService FAST_PROXY;
   private XxService METHOD_PROXY;
 
 
   @Setup
-  public void setup() throws Throwable {
+  public void setup() {
     target = new XxServiceImpl();
 
     // lambda表达式
