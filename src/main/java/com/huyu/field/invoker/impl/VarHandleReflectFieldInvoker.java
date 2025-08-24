@@ -5,12 +5,15 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.lang.reflect.AccessFlag;
 import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 
 public class VarHandleReflectFieldInvoker implements FieldReflectInvoker<Object, Object> {
 
   private static final MethodHandles.Lookup SHARED_LOOKUP = MethodHandles.lookup();
 
   private final VarHandle varHandle;
+
+  private final boolean staticField;
 
   public VarHandleReflectFieldInvoker(Field field) {
     try {
@@ -20,7 +23,14 @@ public class VarHandleReflectFieldInvoker implements FieldReflectInvoker<Object,
       } else {
         lookup = MethodHandles.privateLookupIn(field.getDeclaringClass(), SHARED_LOOKUP);
       }
-      varHandle = lookup.findVarHandle(field.getDeclaringClass(), field.getName(), field.getType());
+
+      if (staticField = Modifier.isStatic(field.getModifiers())) {
+        varHandle = lookup.findStaticVarHandle(field.getDeclaringClass(), field.getName(),
+            field.getType());
+      } else {
+        varHandle = lookup.findVarHandle(field.getDeclaringClass(), field.getName(),
+            field.getType());
+      }
     } catch (IllegalAccessException e) {
       throw new RuntimeException("Unable to get VarHandle", e);
     } catch (NoSuchFieldException e) {
@@ -34,11 +44,19 @@ public class VarHandleReflectFieldInvoker implements FieldReflectInvoker<Object,
 
   @Override
   public void set(Object target, Object arg) {
-    varHandle.set(target, arg);
+    if (staticField) {
+      varHandle.set(arg);
+    } else {
+      varHandle.set(target, arg);
+    }
   }
 
   @Override
   public Object get(Object target) {
-    return varHandle.get(target);
+    if (staticField) {
+      return varHandle.get();
+    } else {
+      return varHandle.get(target);
+    }
   }
 }

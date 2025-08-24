@@ -1,5 +1,7 @@
 package com.huyu.field;
 
+import static com.huyu.utils.ClassFileUtils.getPkg;
+import static com.huyu.utils.ClassFileUtils.getUniSimpleClassName;
 import static com.huyu.utils.ClassFileUtils.isSupportClassFileAPI;
 
 import com.huyu.field.invoker.FieldReflectInvoker;
@@ -16,6 +18,7 @@ import java.lang.constant.MethodTypeDesc;
 import java.lang.reflect.AccessFlag;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.util.Optional;
 
 
 public class ReflectFieldInvokerUtils {
@@ -24,7 +27,7 @@ public class ReflectFieldInvokerUtils {
   /**
    * 创建抽象字段访问器
    *
-   * @param field 目标字��
+   * @param field 目标字段
    * @param <T>   FieldReflectInvoker的子类型
    * @return 最优的FieldReflectInvoker实现
    */
@@ -33,6 +36,9 @@ public class ReflectFieldInvokerUtils {
     if (field == null) {
       throw new IllegalArgumentException("Field cannot be null");
     }
+
+    boolean isPrivateField = field.accessFlags().contains(AccessFlag.PRIVATE);
+    boolean isStaticField = field.accessFlags().contains(AccessFlag.STATIC);
 
     // 1. 优先尝试 Unsafe 模式
     if (UnsafeUtils.isSupportUnsafe()) {
@@ -52,8 +58,8 @@ public class ReflectFieldInvokerUtils {
       }
     }
 
-    // 3. 对于公共属性
-    if (!field.accessFlags().contains(AccessFlag.PRIVATE) && isSupportClassFileAPI()) {
+    // 3. 对于非私有字段或私有静态字段，可以使用ClassFile API
+    if ((!isPrivateField || (isPrivateField && isStaticField)) && isSupportClassFileAPI()) {
       try {
         //需要通过ClassFile API 创建 FieldReflectInvoker实现类
         return createDirectInvoker(field);
@@ -82,10 +88,10 @@ public class ReflectFieldInvokerUtils {
    * 3. 类型安全的字段访问
    * </pre>
    *
-   * @param field 目标字段，必须是 public 字段
+   * @param field 目标字段，必须是 public 字段或者私有静态字段
    * @param <T>   FieldReflectInvoker 的实现类型
    * @return 动态生成的高性能字段访问器
-   * @throws IllegalArgumentException      如果字段不是 public 或为 null
+   * @throws IllegalArgumentException      如果字段为 null 或者是私有实例字段
    * @throws UnsupportedOperationException 如果 ClassFile API 不可用
    */
   @SuppressWarnings("unchecked")
@@ -94,9 +100,15 @@ public class ReflectFieldInvokerUtils {
       throw new IllegalArgumentException("Field cannot be null");
     }
 
-    if (field.accessFlags().contains(AccessFlag.PRIVATE)) {
+    boolean isPrivateField = field.accessFlags().contains(AccessFlag.PRIVATE);
+
+    //因为通过classFile生成静态内部类就可以访问私有静态属性，但是实际还是不能访问
+    boolean isStaticField = field.accessFlags().contains(AccessFlag.STATIC);
+
+    // 只有私有实例字段不能使用直接访问器，私有静态字段可以通过静态内部类访问
+    if (isPrivateField) {
       throw new IllegalArgumentException(
-          "Field must not be private for ClassFile API invoker: " + field);
+          "Private instance field cannot use ClassFile API invoker: " + field);
     }
 
     if (!isSupportClassFileAPI()) {
@@ -133,8 +145,11 @@ public class ReflectFieldInvokerUtils {
    */
   private static Class<?> generateFieldInvokerClass(Field field) {
     //生成的全类名
-    String fullClassName =
-        ClassFileUtils.getFullClassName(field, field.getDeclaringClass()) + "_fieldInvoker";
+    // 如果是Java类，使用ClassFileUtils的包名，否则使用declaring的包名
+    final String pkg = getPkg(field.getDeclaringClass());
+    //构建唯一标识 返回参数 + 方法名 + 参数个数 + 参数类型名
+    final String simpleClassName = getUniSimpleClassName(field) + "_FieldInvoker";
+    String fullClassName = (pkg.isEmpty() ? "" : pkg + ".") + simpleClassName;
 
     //字段所在类
     Class<?> declaringClass = field.getDeclaringClass();
@@ -154,6 +169,12 @@ public class ReflectFieldInvokerUtils {
     Class<?> fieldType = field.getType();
     //字段名称
     String fieldName = field.getName();
+    //检查是否为静态字段
+    boolean isStaticField = field.accessFlags().contains(AccessFlag.STATIC);
+    //检查是否为私有字段
+    boolean isPrivateField = field.accessFlags().contains(AccessFlag.PRIVATE);
+    //检查是否为私有静态字段
+    boolean isPrivateStaticField = isStaticField && isPrivateField;
 
     // 获取类描述符
     ClassDesc thisClassDesc = ClassDesc.of(fullClassName);
@@ -185,7 +206,8 @@ public class ReflectFieldInvokerUtils {
     byte[] classBytes = ClassFile.of().build(thisClassDesc, classBuilder -> {
 
       //类的访问标志
-      classBuilder.withFlags(ClassFile.ACC_PUBLIC | ClassFile.ACC_FINAL)
+      classBuilder.withFlags(isPrivateStaticField ? (ClassFile.ACC_PUBLIC | ClassFile.ACC_STATIC)
+              : (ClassFile.ACC_PUBLIC | ClassFile.ACC_FINAL))
 
           //继承超类
           .withSuperclass(ConstantDescs.CD_Object)
@@ -205,27 +227,124 @@ public class ReflectFieldInvokerUtils {
                       .invokespecial(ConstantDescs.CD_Object, ConstantDescs.INIT_NAME,
                           ConstantDescs.MTD_void).return_();
                 });
-              })
+              });
 
-          // 生成 set 方法：void set(T target, R arg)
-          .withMethod("set",
+      // 如果是私有静态字段，生成两个accept方法
+      if (isPrivateStaticField) {
+
+        //用于描述静态内部类
+        classBuilder.with(java.lang.classfile.attribute.InnerClassesAttribute.of(
+            // 描述内部类自身
+            java.lang.classfile.attribute.InnerClassInfo.of(
+                //内部类描述
+                thisClassDesc,
+                // 外部类的ClassDesc
+                Optional.of(declaringClassDesc),
+                // 内部类的简单名称
+                Optional.of(simpleClassName),
+                ClassFile.ACC_PUBLIC | ClassFile.ACC_STATIC | ClassFile.ACC_FINAL)));
+
+        // 生成设置静态字段的accept方法：void accept(fieldType value)
+        classBuilder.withMethod("accept", MethodTypeDesc.of(ConstantDescs.CD_void, fieldTypeDesc),
+                ClassFile.ACC_PUBLIC | ClassFile.ACC_STATIC, methodBuilder -> {
+                  methodBuilder.withCode(codeBuilder -> {
+                    // 加载参数值 - 注意静态方法的参数索引从0开始
+                    if (fieldType == long.class) {
+                      codeBuilder.lload(0); // 加载long类型参数
+                    } else if (fieldType == double.class) {
+                      codeBuilder.dload(0); // 加载double类型参数
+                    } else if (fieldType == float.class) {
+                      codeBuilder.fload(0); // 加载float类型参数
+                    } else if (fieldType.isPrimitive()) {
+                      codeBuilder.iload(0); // 加载其他基本类型参数(int, short, byte, char, boolean)
+                    } else {
+                      codeBuilder.aload(0); // 加载引用类型参数
+                    }
+
+                    codeBuilder.putstatic(declaringClassDesc, fieldName, fieldTypeDesc) // 设置静态字段
+                        .return_();
+                  });
+                })
+
+            // 生成获取静态字段的accept方法：fieldType accept()
+            .withMethod("accept", MethodTypeDesc.of(fieldTypeDesc),
+                ClassFile.ACC_PUBLIC | ClassFile.ACC_STATIC, methodBuilder -> {
+                  methodBuilder.withCode(codeBuilder -> {
+                    codeBuilder.getstatic(declaringClassDesc, fieldName, fieldTypeDesc); // 获取静态字段
+
+                    // 根据字段类型使用正确的返回指令
+                    if (fieldType == long.class || fieldType == double.class) {
+                      // long和double类型使用双字节返回指令
+                      if (fieldType == long.class) {
+                        codeBuilder.lreturn(); // 返回long值
+                      } else {
+                        codeBuilder.dreturn(); // 返回double值
+                      }
+                    } else if (fieldType == float.class) {
+                      codeBuilder.freturn(); // 返回float值
+                    } else if (fieldType.isPrimitive()) {
+                      codeBuilder.ireturn(); // 返回int/short/byte/char/boolean值
+                    } else {
+                      codeBuilder.areturn(); // 返回引用类型值
+                    }
+                  });
+                });
+      }
+
+      // 生成 set 方法：void set(T target, R arg)
+      classBuilder.withMethod("set",
               MethodTypeDesc.of(ConstantDescs.CD_void, declaringClassDesc, setMethodFieldTypeDesc),
               ClassFile.ACC_PUBLIC, methodBuilder -> {
                 methodBuilder.withCode(codeBuilder -> {
-                  codeBuilder.aload(1) // load target
-                      .aload(2); // load arg
+                  if (isPrivateStaticField) {
+                    // 私有静态字段：调用自身的accept方法
+                    codeBuilder.aload(2); // load arg
 
-                  // 类型转换：将包装类型 arg 转换为字段类型
-                  if (fieldType.isPrimitive()) {
-                    // 基本类型需要拆箱
-                    generateUnboxing(codeBuilder, fieldType);
+                    // 类型转换
+                    if (fieldType.isPrimitive()) {
+                      generateUnboxing(codeBuilder, fieldType);
+                    } else {
+                      codeBuilder.checkcast(fieldTypeDesc);
+                    }
+
+                    // 调用自身的accept方法
+                    codeBuilder.invokestatic(thisClassDesc, "accept",
+                        MethodTypeDesc.of(ConstantDescs.CD_void, fieldTypeDesc));
+
+                  } else if (isStaticField) {
+                    // 非私有静态字段：直接加载参数值，不需要target
+                    codeBuilder.aload(2); // load arg
+
+                    // 类型转换：将包装类型 arg 转换为字段类型
+                    if (fieldType.isPrimitive()) {
+                      // 基本类型需要拆箱
+                      generateUnboxing(codeBuilder, fieldType);
+                    } else {
+                      // 引用类型直接强制转换
+                      codeBuilder.checkcast(fieldTypeDesc);
+                    }
+
+                    // 静态字段使用 putstatic
+                    codeBuilder.putstatic(declaringClassDesc, fieldName, fieldTypeDesc);
                   } else {
-                    // 引用类型直接强制转换
-                    codeBuilder.checkcast(fieldTypeDesc);
+                    // 实例字段：需要加载target和参数值
+                    codeBuilder.aload(1) // load target
+                        .aload(2); // load arg
+
+                    // 类型转换：将包装类型 arg 转换为字段类型
+                    if (fieldType.isPrimitive()) {
+                      // 基本类型需要拆箱
+                      generateUnboxing(codeBuilder, fieldType);
+                    } else {
+                      // 引用类型直接强制转换
+                      codeBuilder.checkcast(fieldTypeDesc);
+                    }
+
+                    // 实例字段使用 putfield
+                    codeBuilder.putfield(declaringClassDesc, fieldName, fieldTypeDesc);
                   }
 
-                  // 设置字段值：target.fieldName = convertedArg
-                  codeBuilder.putfield(declaringClassDesc, fieldName, fieldTypeDesc).return_();
+                  codeBuilder.return_();
                 });
               })
 
@@ -233,13 +352,36 @@ public class ReflectFieldInvokerUtils {
           .withMethod("get", MethodTypeDesc.of(getMethodReturnTypeDesc, declaringClassDesc),
               ClassFile.ACC_PUBLIC, methodBuilder -> {
                 methodBuilder.withCode(codeBuilder -> {
-                  codeBuilder.aload(1) // load target
-                      .getfield(declaringClassDesc, fieldName, fieldTypeDesc); // 获取字段值
+                  if (isPrivateStaticField) {
+                    // 私有静态字段：调用自身的accept方法获取值
+                    codeBuilder.invokestatic(thisClassDesc, "accept",
+                        MethodTypeDesc.of(fieldTypeDesc));
 
-                  // 类型转换：将字段类型转换为返回类型
-                  if (fieldType.isPrimitive()) {
-                    // 基本类型需要装箱
-                    generateBoxing(codeBuilder, fieldType);
+                    // 类型转换：将字段类型转换为返回类型
+                    if (fieldType.isPrimitive()) {
+                      // 基本类型需要装箱
+                      generateBoxing(codeBuilder, fieldType);
+                    }
+
+                  } else if (isStaticField) {
+                    // 非私有静态字段：直接获取字段值，不需要target
+                    codeBuilder.getstatic(declaringClassDesc, fieldName, fieldTypeDesc);
+
+                    // 类型转换：将字段类型转换为返回类型
+                    if (fieldType.isPrimitive()) {
+                      // 基本类型需要装箱
+                      generateBoxing(codeBuilder, fieldType);
+                    }
+                  } else {
+                    // 实例字段：需要加载target然后获取字段值
+                    codeBuilder.aload(1) // load target
+                        .getfield(declaringClassDesc, fieldName, fieldTypeDesc);
+
+                    // 类型转换：将字段类型转换为返回类型
+                    if (fieldType.isPrimitive()) {
+                      // 基本类型需要装箱
+                      generateBoxing(codeBuilder, fieldType);
+                    }
                   }
                   // 引用类型不需要额外转换
 
@@ -253,8 +395,10 @@ public class ReflectFieldInvokerUtils {
               ClassFile.ACC_PUBLIC | ClassFile.ACC_BRIDGE | ClassFile.ACC_SYNTHETIC,
               methodBuilder -> {
                 methodBuilder.withCode(codeBuilder -> {
-                  codeBuilder.aload(0) // load this
-                      .aload(1) // load target
+                  codeBuilder.aload(0); // load this
+
+                  // 对于静态字段和实例字段，都需要正确的参数处理
+                  codeBuilder.aload(1) // load target (即使是静态字段也要传递，在具体方法中会被忽略)
                       .checkcast(declaringClassDesc) // cast to specific type
                       .aload(2); // load arg
 
@@ -280,10 +424,13 @@ public class ReflectFieldInvokerUtils {
               ClassFile.ACC_PUBLIC | ClassFile.ACC_BRIDGE | ClassFile.ACC_SYNTHETIC,
               methodBuilder -> {
                 methodBuilder.withCode(codeBuilder -> {
-                  codeBuilder.aload(0) // load this
-                      .aload(1) // load target
-                      .checkcast(declaringClassDesc) // cast to specific type
-                      .invokevirtual(thisClassDesc, "get",
+                  codeBuilder.aload(0); // load this
+
+                  // 对于静态字段和实例字段，都需要正确的参数处理
+                  codeBuilder.aload(1) // load target (即使是静态字段也要传递，在具体方法中会被忽略)
+                      .checkcast(declaringClassDesc); // cast to specific type
+
+                  codeBuilder.invokevirtual(thisClassDesc, "get",
                           MethodTypeDesc.of(getMethodReturnTypeDesc, declaringClassDesc))
                       .areturn(); // 返回值
                 });
@@ -297,19 +444,6 @@ public class ReflectFieldInvokerUtils {
     return ClassFileUtils.loadClass(classBytes, fullClassName, field.getDeclaringClass());
   }
 
-  /**
-   * 生成 invoke 方法的字节码体
-   *
-   * @param codeBuilder        字节码构建器
-   * @param declaringClassDesc 声明类描述符
-   * @param fieldTypeDesc      字段类型描述符
-   * @param fieldName          字段名
-   * @param fieldType          字段类型
-   */
-  private static void generateInvokeMethodBody(CodeBuilder codeBuilder,
-      ClassDesc declaringClassDesc, ClassDesc fieldTypeDesc, String fieldName, Class<?> fieldType) {
-
-  }
 
   /**
    * 生成基本类型装箱字节码
