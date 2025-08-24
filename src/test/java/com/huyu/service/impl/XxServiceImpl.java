@@ -15,6 +15,7 @@
  */
 package com.huyu.service.impl;
 
+import com.huyu.field.invoker.FieldReflectInvoker;
 import com.huyu.service.XxService;
 
 public class XxServiceImpl implements XxService<XxServiceImpl1> {
@@ -22,6 +23,39 @@ public class XxServiceImpl implements XxService<XxServiceImpl1> {
   public long cc;
   String aa;
 
+  //对象属性
+  protected long noPrivateFiled = 10L;
+
+  private long privateFiled = 10L;
+
+  public static long publicStaticField = 10L;
+
+  private static long privateStaticField = 10L;
+
+
+  /**
+   * 用于直接调用私有静态方法
+   */
+  public static class XxServiceStaticImpl implements FieldReflectInvoker<Object, Object> {
+
+    public static long accept() {
+      return XxServiceImpl.privateStaticField;
+    }
+
+    public static void accept(long accept) {
+      XxServiceImpl.privateStaticField = accept;
+    }
+
+    @Override
+    public void set(Object target, Object arg) {
+      accept((Long) arg);
+    }
+
+    @Override
+    public Object get(Object target) {
+      return accept();
+    }
+  }
 
   static long staticAdd() {
     int a = 1;
@@ -30,7 +64,7 @@ public class XxServiceImpl implements XxService<XxServiceImpl1> {
     return a + b + c;
   }
 
-   long notPrivateAdd() {
+  long notPrivateAdd() {
     int a = 1;
     int b = 2;
     int c = 4;
