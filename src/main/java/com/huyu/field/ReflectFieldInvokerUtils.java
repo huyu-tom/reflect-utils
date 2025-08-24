@@ -134,7 +134,7 @@ public class ReflectFieldInvokerUtils {
   private static Class<?> generateFieldInvokerClass(Field field) {
     //生成的全类名
     String fullClassName =
-        ClassFileUtils.getFullClassName(field, field.getDeclaringClass()) + "_fieldInvoker";
+        ClassFileUtils.getFullClassName(field, field.getDeclaringClass()) + "_FieldInvoker";
 
     //字段所在类
     Class<?> declaringClass = field.getDeclaringClass();

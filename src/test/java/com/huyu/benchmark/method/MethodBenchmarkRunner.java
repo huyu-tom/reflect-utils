@@ -23,8 +23,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 public class MethodBenchmarkRunner {
 
   public static void main(String[] args) throws RunnerException {
-    Options options = new OptionsBuilder().include(MethodBenchmark.class.getSimpleName())
-      .build();
+    Options options = new OptionsBuilder().include(MethodBenchmark.class.getSimpleName()).build();
     new Runner(options).run();
   }
 }
