@@ -57,17 +57,48 @@ public class XxServiceImpl implements XxService<XxServiceImpl1> {
     }
   }
 
-  static long staticAdd() {
+  public static long staticAdd(long d) {
     int a = 1;
     int b = 2;
     int c = 8;
     return a + b + c;
   }
 
+  static long staticAdd1() {
+    return 100L;
+  }
+
+  static long staticAdd1(long a, Long b, Integer c, XxService xxService) {
+    return a + b + c;
+  }
+
+  private static long privateStaticAdd1(long a, Long b, Integer c, XxService xxService) {
+    return a + b + c;
+  }
+
+  private static long privateStaticAdd1() {
+    return 100L;
+  }
+
   long notPrivateAdd() {
     int a = 1;
     int b = 2;
     int c = 4;
+    return a + b + c;
+  }
+
+  long notPrivateAdd(long a, Long b, Integer c, XxService xxService) {
+    return a + b + c;
+  }
+
+  private long privateAdd() {
+    int a = 1;
+    int b = 2;
+    int c = 4;
+    return a + b + c;
+  }
+
+  private long privateAdd(long a, Long b, Integer c, XxService xxService) {
     return a + b + c;
   }
 

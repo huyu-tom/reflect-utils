@@ -9,6 +9,7 @@ import java.lang.constant.MethodTypeDesc;
 import java.lang.invoke.MethodHandles;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 
 
 /**
@@ -49,9 +50,18 @@ public class ClassFileUtils {
   public static String getUniSimpleClassName(Method method) {
     Class<?> declaring = method.getDeclaringClass();
     final String methodSignature =
-        method.getReturnType().getCanonicalName() + "_" + method.getName() + "_"
-            + method.getParameterCount() + "_" + java.util.Arrays.stream(method.getParameterTypes())
-            .map(Class::getCanonicalName).collect(java.util.stream.Collectors.joining("_"));
+        //返回值类型
+        method.getReturnType().getCanonicalName()
+            //方法名
+            + "_" + method.getName()
+            //参数修饰符
+            + "_" + method.getModifiers()
+            //参数个数
+            + "_" + method.getParameterCount()
+            //各个参数类型的类型名称
+            + "_" + java.util.Arrays.stream(method.getParameterTypes()).map(Class::getCanonicalName)
+            .collect(java.util.stream.Collectors.joining("_"));
+    //$符号相当于生成一种内部类
     final String simpleClassName = (declaring.getSimpleName() + "$" + methodSignature).replace(".",
         "_");
     return simpleClassName;
@@ -59,7 +69,13 @@ public class ClassFileUtils {
 
   public static String getUniSimpleClassName(Field field) {
     Class<?> declaring = field.getDeclaringClass();
-    final String fieldSignature = field.getName() + "_" + field.getType().getName();
+    final String fieldSignature =
+        //修饰符
+        field.getModifiers()
+            //属性名称
+            + "_" + field.getName()
+            //类型
+            + "_" + field.getType().getName();
     final String simpleClassName = (declaring.getSimpleName() + "$" + fieldSignature).replace(".",
         "_");
     return simpleClassName;
@@ -156,20 +172,27 @@ public class ClassFileUtils {
    */
   public static void generateAbstractMethod(ClassBuilder classBuilder, Method method,
       boolean isVoid) {
-    String methodName = isVoid ? "accept" : "apply";
-    Class<?> declaring = method.getDeclaringClass();
-    Class<?>[] paramTypes = method.getParameterTypes();
-
-    // 构建方���描述符
-    ClassDesc[] params = new ClassDesc[paramTypes.length + 1];
-    params[0] = getClassDesc(declaring);
-    for (int i = 0; i < paramTypes.length; i++) {
-      params[i + 1] = getClassDesc(paramTypes[i]);
+    final boolean isStaticMethod = Modifier.isStatic(method.getModifiers());
+    final Class<?> declaring = method.getDeclaringClass();
+    final Class<?>[] paramTypes = method.getParameterTypes();
+    final String methodName;
+    ClassDesc[] params;
+    if (isStaticMethod) {
+      methodName = isVoid ? "acceptStatic" : "applyStatic";
+      params = new ClassDesc[paramTypes.length];
+      for (int i = 0; i < paramTypes.length; i++) {
+        params[i] = getClassDesc(paramTypes[i]);
+      }
+    } else {
+      methodName = isVoid ? "accept" : "apply";
+      params = new ClassDesc[paramTypes.length + 1];
+      params[0] = getClassDesc(declaring);
+      for (int i = 0; i < paramTypes.length; i++) {
+        params[i + 1] = getClassDesc(paramTypes[i]);
+      }
     }
-
     ClassDesc returnType = isVoid ? ConstantDescs.CD_void : getClassDesc(method.getReturnType());
     MethodTypeDesc methodTypeDesc = MethodTypeDesc.of(returnType, params);
-
     classBuilder.withMethod(methodName, methodTypeDesc,
         ClassFile.ACC_PUBLIC | ClassFile.ACC_ABSTRACT, methodBuilder -> {
           // 抽象方法不需要方法体
@@ -195,11 +218,14 @@ public class ClassFileUtils {
             codeBuilder.aload(0);
 
             // 加载 target 参数并转换为声明类
-            codeBuilder.aload(1);
-            codeBuilder.checkcast(getClassDesc(declaring));
+            if (!Modifier.isStatic(method.getModifiers())) {
+              //不是静态方法才进行加载
+              codeBuilder.aload(1);
+              codeBuilder.checkcast(getClassDesc(declaring));
+            }
 
+            // 处理参数数组 Object[] => 处理可变参数
             Class<?>[] paramTypes = method.getParameterTypes();
-            // 处理参数数组 Object[]
             for (int i = 0; i < paramTypes.length; i++) {
               codeBuilder.aload(2); // 加载 args 数组
               codeBuilder.loadConstant(i); // 加载索引
@@ -207,17 +233,28 @@ public class ClassFileUtils {
               generateParameterConversion(codeBuilder, paramTypes[i]);
             }
 
-            // 调用抽象方法 apply/accept
-            String methodName = isVoid ? "accept" : "apply";
-            ClassDesc[] params = new ClassDesc[paramTypes.length + 1];
-            params[0] = getClassDesc(declaring);
-            for (int i = 0; i < paramTypes.length; i++) {
-              params[i + 1] = getClassDesc(paramTypes[i]);
+            // 调用对应的apply或者accept或者acceptStatic或者applyStatic方法
+            // 构建方法描述符
+            String methodName;
+            ClassDesc[] params;
+            if (Modifier.isStatic(method.getModifiers())) {
+              methodName = isVoid ? "acceptStatic" : "applyStatic";
+              params = new ClassDesc[paramTypes.length];
+              for (int i = 0; i < paramTypes.length; i++) {
+                params[i] = getClassDesc(paramTypes[i]);
+              }
+            } else {
+              methodName = isVoid ? "accept" : "apply";
+              params = new ClassDesc[paramTypes.length + 1];
+              params[0] = getClassDesc(declaring);
+              for (int i = 0; i < paramTypes.length; i++) {
+                params[i + 1] = getClassDesc(paramTypes[i]);
+              }
             }
-
             ClassDesc returnType =
                 isVoid ? ConstantDescs.CD_void : getClassDesc(method.getReturnType());
             MethodTypeDesc methodTypeDesc = MethodTypeDesc.of(returnType, params);
+            //调用
             codeBuilder.invokeinterface(thisClassDesc, methodName, methodTypeDesc);
 
             // 处理返回值（基本类型需要装箱）

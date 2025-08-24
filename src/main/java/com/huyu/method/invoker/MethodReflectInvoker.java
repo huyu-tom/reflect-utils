@@ -13,11 +13,15 @@ public interface MethodReflectInvoker<T, R> {
 
   /**
    *
-   * 反射调用
+   * 调用方法(静态方法,实例方法)
+   * <p>
+   * 使用方式和Method的invoke方法一样
+   * </p>
    *
    * @param target
    * @param args
    * @return
    */
   R invoke(T target, Object... args);
+
 }
