@@ -57,11 +57,8 @@ public class XxServiceImpl implements XxService<XxServiceImpl1> {
     }
   }
 
-  public static long staticAdd(long d) {
-    int a = 1;
-    int b = 2;
-    int c = 8;
-    return a + b + c;
+  static long staticAdd(long d) {
+    return d;
   }
 
   static long staticAdd1() {

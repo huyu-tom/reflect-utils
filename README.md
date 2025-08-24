@@ -1,8 +1,69 @@
 ## 反射工具
 
->
-提供一种统一的方式接口,对不同的反射方式进行封装,用户如果是方法反射只需要MethodReflectInvoker.invoke()
-方法,属性反射只需要FieldReflectInvoker的get()或者set()
+#### 背景
+
+> - Java开发当中,反射扮演者很重要的角色,尤其是Spring和FastJson2和Mybatis中会用到大量的反射,然后各种方案,没有统一的接口方案
+> - JDK原生的反射性能并不高,尤其是方法调用,所以需要提供一种高性能的反射调用方案
+
+#### 目的
+
+> 提供一种统一的方式接口,对不同的反射方法和属性方式进行封装,并且拥有兜底方案
+
+1. 方法访问模式
+
+```java
+package com.huyu.method.invoker;
+
+/**
+ *
+ * 反射统一调用接口
+ *
+ * @param <T> 目标对象
+ * @param <R> 返回值 如果调用方法无返回值的话,返回的是null
+ * @author huyu
+ */
+public interface MethodReflectInvoker<T, R> {
+
+  /**
+   *
+   * 调用方法(静态方法,实例方法)
+   * <p>
+   * 使用方式和Method的invoke方法一样
+   * </p>
+   *
+   * @param target
+   * @param args
+   * @return
+   */
+  R invoke(T target, Object... args);
+
+}
+
+```
+
+2. 属性访问模式
+
+```java
+public interface FieldReflectInvoker<T, R> {
+
+  /**
+   *
+   *
+   * @param target
+   * @return
+   */
+  void set(T target, R arg);
+
+
+  /**
+   *
+   *
+   * @param target
+   * @return
+   */
+  R get(T target);
+}
+```
 
 #### 1. 方法反射
 
