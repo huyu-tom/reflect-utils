@@ -23,6 +23,14 @@ public class XxServiceImpl implements XxService<XxServiceImpl1> {
   public long cc;
   String aa;
 
+  public XxServiceImpl() {
+
+  }
+
+  private XxServiceImpl(XxService xxService) {
+
+  }
+
   //对象属性
   protected long noPrivateFiled = 10L;
 

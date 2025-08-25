@@ -1,7 +1,8 @@
 package com.huyu.method.invoker.impl;
 
 import com.huyu.method.invoker.MethodReflectInvoker;
-import java.lang.reflect.Method;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Executable;
 import java.lang.reflect.Modifier;
 
 
@@ -16,21 +17,22 @@ import java.lang.reflect.Modifier;
 public class StaticFixedLambdaMethodReflectInvoker implements MethodReflectInvoker<Object, Object> {
 
 
-  private final boolean isStaticMethod;
+  private final boolean isStaticOrConstructorMethod;
 
   private final MethodReflectInvoker<Object, Object> methodReflectInvoker;
 
 
-  public StaticFixedLambdaMethodReflectInvoker(Method method,
+  public StaticFixedLambdaMethodReflectInvoker(Executable method,
       MethodReflectInvoker methodReflectInvoker) {
-    this.isStaticMethod = Modifier.isStatic(method.getModifiers());
+    this.isStaticOrConstructorMethod =
+        Modifier.isStatic(method.getModifiers()) || method instanceof Constructor;
     this.methodReflectInvoker = methodReflectInvoker;
   }
 
 
   @Override
   public Object invoke(Object target, Object... args) {
-    if (isStaticMethod) {
+    if (isStaticOrConstructorMethod) {
       //忽略第一个参数,直接设置为null
       return methodReflectInvoker.invoke(null, args);
     }
