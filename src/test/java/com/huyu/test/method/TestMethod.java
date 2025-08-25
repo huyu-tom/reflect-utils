@@ -5,6 +5,7 @@ import com.huyu.method.ReflectMethodInvokerUtils;
 import com.huyu.method.invoker.MethodReflectInvoker;
 import com.huyu.service.XxService;
 import com.huyu.service.impl.XxServiceImpl;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 
 public class TestMethod {
@@ -18,6 +19,55 @@ public class TestMethod {
     testNoPrivateStaticMethod();
 
     testPrivateStaticMethod();
+
+    testConstructor();
+  }
+
+  private static void testConstructor() throws Throwable {
+    System.out.println("=================调用构造方法============");
+
+    //公共构造
+    Constructor<XxServiceImpl> declaredConstructor = XxServiceImpl.class.getDeclaredConstructor();
+    MethodReflectInvoker lambda = FixedLambdaReflectUtils.createLambda(declaredConstructor);
+    XxService xxService = (XxService) lambda.invoke(null);
+    System.out.println("fixLambda" + xxService.add(10));
+
+    MethodReflectInvoker dynasticLambdaInvoker = ReflectMethodInvokerUtils.createDynasticLambdaInvoker(
+        declaredConstructor);
+    XxService xxServiceDynamic = (XxService) dynasticLambdaInvoker.invoke(null);
+    System.out.println("dyLambda" + xxServiceDynamic.add(10));
+
+    MethodReflectInvoker DirectLambdaInvoker = ReflectMethodInvokerUtils.createDirectMethodInvoker(
+        declaredConstructor);
+    XxService xxServiceDirect = (XxService) DirectLambdaInvoker.invoke(null);
+    System.out.println("directLambda" + xxServiceDirect.add(10));
+
+    System.out.println("调用私有构造函数=====================");
+
+    //私有构造
+    Constructor<XxServiceImpl> privateConstructor = XxServiceImpl.class.getDeclaredConstructor(
+        XxService.class);
+    MethodReflectInvoker privateInvoker = FixedLambdaReflectUtils.createLambda(privateConstructor);
+    XxService privateService = (XxService) privateInvoker.invoke(null, xxService);
+    System.out.println("FixLambda" + privateService.add(10));
+
+    //lambda
+    MethodReflectInvoker privateDynasticLambdaInvoker = ReflectMethodInvokerUtils.createDynasticLambdaInvoker(
+        privateConstructor);
+    XxService privateXxServiceDynamic = (XxService) privateDynasticLambdaInvoker.invoke(null,
+        xxService);
+    System.out.println("dyLambda" + privateXxServiceDynamic.add(10));
+
+    try {
+      MethodReflectInvoker privateDirectLambdaInvoker = ReflectMethodInvokerUtils.createDirectMethodInvoker(
+          privateConstructor);
+      XxService privateXxServiceDirect = (XxService) privateDirectLambdaInvoker.invoke(null,
+          xxService);
+      System.out.println(
+          "directLambda调用私有构造函数未报错,不符合预期" + privateXxServiceDirect.add(10));
+    } catch (Throwable e) {
+      System.out.println("directLambda调用私有构造函数报错,符合预期");
+    }
   }
 
 

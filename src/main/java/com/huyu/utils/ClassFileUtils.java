@@ -7,6 +7,8 @@ import java.lang.constant.ClassDesc;
 import java.lang.constant.ConstantDescs;
 import java.lang.constant.MethodTypeDesc;
 import java.lang.invoke.MethodHandles;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Executable;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
@@ -33,7 +35,7 @@ public class ClassFileUtils {
     return SUPPORT_CLASS_FILE_API;
   }
 
-  public static String getFullClassName(Method method, Class<?> packageClass) {
+  public static String getFullClassName(Executable method, Class<?> packageClass) {
     // 如果是Java类，使用ClassFileUtils的包名，否则使用declaring的包名
     final String pkg = getPkg(packageClass);
     //构建唯一标识 返回参数 + 方法名 + 参数个数 + 参数类型名
@@ -47,11 +49,12 @@ public class ClassFileUtils {
         : (declaring.getPackage() == null ? "" : declaring.getPackage().getName());
   }
 
-  public static String getUniSimpleClassName(Method method) {
+  public static String getUniSimpleClassName(Executable method) {
     Class<?> declaring = method.getDeclaringClass();
     final String methodSignature =
         //返回值类型
-        method.getReturnType().getCanonicalName()
+        (method instanceof Constructor ? (declaring.getName())
+            : (((Method) method).getReturnType().getName()))
             //方法名
             + "_" + method.getName()
             //参数修饰符
@@ -93,10 +96,11 @@ public class ClassFileUtils {
   /**
    * 添加泛型签名信息到类
    */
-  public static void addGenericSignature(ClassBuilder classBuilder, Method method, boolean isVoid,
+  public static void addGenericSignature(ClassBuilder classBuilder, Executable method,
       Class<?> interfaceClass) {
     Class<?> declaring = method.getDeclaringClass();
-    Class<?> returnType = method.getReturnType();
+    Class<?> returnType =
+        method instanceof Constructor ? declaring : ((Method) method).getReturnType();
 
     // 构建泛型签名字符串：Ljava/lang/Object;Lorg/mybatis/test/BaseReflectLambda<LTestDefaultInterface;LLong;>;
     StringBuilder signature = new StringBuilder();
@@ -107,7 +111,7 @@ public class ClassFileUtils {
     signature.append("L").append(declaring.getName().replace('.', '/')).append(";");
 
     // 添加第二个泛型参数：返回类型
-    if (isVoid) {
+    if (returnType == void.class) {
       signature.append("Ljava/lang/Object;");
     } else {
       if (returnType.isPrimitive()) {
@@ -170,14 +174,15 @@ public class ClassFileUtils {
   /**
    * 生成抽象方法 (apply 或 accept)
    */
-  public static void generateAbstractMethod(ClassBuilder classBuilder, Method method,
+  public static void generateAbstractMethod(ClassBuilder classBuilder, Executable method,
       boolean isVoid) {
     final boolean isStaticMethod = Modifier.isStatic(method.getModifiers());
     final Class<?> declaring = method.getDeclaringClass();
     final Class<?>[] paramTypes = method.getParameterTypes();
     final String methodName;
     ClassDesc[] params;
-    if (isStaticMethod) {
+
+    if (isStaticMethod || method instanceof Constructor<?>) {
       methodName = isVoid ? "acceptStatic" : "applyStatic";
       params = new ClassDesc[paramTypes.length];
       for (int i = 0; i < paramTypes.length; i++) {
@@ -191,7 +196,9 @@ public class ClassFileUtils {
         params[i + 1] = getClassDesc(paramTypes[i]);
       }
     }
-    ClassDesc returnType = isVoid ? ConstantDescs.CD_void : getClassDesc(method.getReturnType());
+    //是void一定不是构造方法
+    ClassDesc returnType = isVoid ? ConstantDescs.CD_void : getClassDesc(
+        method instanceof Constructor ? declaring : ((Method) method).getReturnType());
     MethodTypeDesc methodTypeDesc = MethodTypeDesc.of(returnType, params);
     classBuilder.withMethod(methodName, methodTypeDesc,
         ClassFile.ACC_PUBLIC | ClassFile.ACC_ABSTRACT, methodBuilder -> {
@@ -201,10 +208,15 @@ public class ClassFileUtils {
 
 
   /**
-   * 生成默认的 invoke 方法 - 高性能版本，直接实现桥接方法避免双重调用
+   *
+   * @param classBuilder
+   * @param method            普通方法或者构造函数
+   * @param isVoid            是void的话,一定不是构造函数,构造函数会返回实例
+   * @param thisClassDesc
+   * @param genericMethodName 生成的方法名
    */
   public static void generateLambdaInvokeMethodWithGenerics(ClassBuilder classBuilder,
-      Method method, boolean isVoid, ClassDesc thisClassDesc, String genericMethodName) {
+      Executable method, boolean isVoid, ClassDesc thisClassDesc, String genericMethodName) {
     Class<?> declaring = method.getDeclaringClass();
 
     // invoke 方法的签名应该是 (Object, Object[]) -> Object  类型擦除
@@ -218,7 +230,7 @@ public class ClassFileUtils {
             codeBuilder.aload(0);
 
             // 加载 target 参数并转换为声明类
-            if (!Modifier.isStatic(method.getModifiers())) {
+            if (!Modifier.isStatic(method.getModifiers()) && !(method instanceof Constructor<?>)) {
               //不是静态方法才进行加载
               codeBuilder.aload(1);
               codeBuilder.checkcast(getClassDesc(declaring));
@@ -237,7 +249,7 @@ public class ClassFileUtils {
             // 构建方法描述符
             String methodName;
             ClassDesc[] params;
-            if (Modifier.isStatic(method.getModifiers())) {
+            if (Modifier.isStatic(method.getModifiers()) || method instanceof Constructor<?>) {
               methodName = isVoid ? "acceptStatic" : "applyStatic";
               params = new ClassDesc[paramTypes.length];
               for (int i = 0; i < paramTypes.length; i++) {
@@ -251,14 +263,19 @@ public class ClassFileUtils {
                 params[i + 1] = getClassDesc(paramTypes[i]);
               }
             }
-            ClassDesc returnType =
-                isVoid ? ConstantDescs.CD_void : getClassDesc(method.getReturnType());
+
+            //调用方法
+            ClassDesc returnType = isVoid ? ConstantDescs.CD_void
+                : method instanceof Method findMethod ? getClassDesc(findMethod.getReturnType())
+                    : getClassDesc(declaring);
             MethodTypeDesc methodTypeDesc = MethodTypeDesc.of(returnType, params);
-            //调用
             codeBuilder.invokeinterface(thisClassDesc, methodName, methodTypeDesc);
 
-            // 处理返回值（基本类型需要装箱）
-            generateReturnValueBoxing(codeBuilder, method.getReturnType());
+            //对调用方法的返回值进行特殊加工,满足返回Object的问题
+            if (!isVoid && (method instanceof Method findMethod)) {
+              //有返回值并且是普通方法才需要进行转箱(对于构造方法实例的话,不需要装箱)
+              generateReturnValueBoxing(codeBuilder, findMethod.getReturnType());
+            }
 
             // 返回结果
             codeBuilder.areturn();

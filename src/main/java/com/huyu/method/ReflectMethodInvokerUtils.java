@@ -13,6 +13,7 @@ import com.huyu.method.invoker.MethodReflectInvoker;
 import com.huyu.method.invoker.impl.DefaultMethodReflectInvoker;
 import com.huyu.utils.AotUtils;
 import com.huyu.utils.ClassFileUtils;
+import java.lang.classfile.ClassBuilder;
 import java.lang.classfile.ClassFile;
 import java.lang.classfile.CodeBuilder;
 import java.lang.constant.ClassDesc;
@@ -22,6 +23,8 @@ import java.lang.invoke.CallSite;
 import java.lang.invoke.LambdaMetafactory;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Executable;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 
@@ -72,14 +75,13 @@ public class ReflectMethodInvokerUtils {
 
 
   /**
-   * 判断方法是否为公共方法
+   * 只要不是私有方法即可
    *
    * @param method 目标方法
    * @return 是否为公共方法
    */
-  private static boolean isLoopMethod(Method method) {
-    return (!Modifier.isPrivate(method.getModifiers())) && Modifier.isPublic(
-        method.getDeclaringClass().getModifiers());
+  private static boolean isLoopMethod(Executable method) {
+    return (!Modifier.isPrivate(method.getModifiers()));
   }
 
   /**
@@ -90,7 +92,7 @@ public class ReflectMethodInvokerUtils {
    * @throws Throwable 创建失败时抛出
    */
   @SuppressWarnings("rawtypes")
-  public static MethodReflectInvoker createDirectMethodInvoker(Method method) throws Throwable {
+  public static MethodReflectInvoker createDirectMethodInvoker(Executable method) throws Throwable {
 
     if (method == null) {
       throw new IllegalArgumentException("Method cannot be null");
@@ -131,8 +133,7 @@ public class ReflectMethodInvokerUtils {
             .withSuperclass(ConstantDescs.CD_Object).withInterfaceSymbols(baseInvokerDesc);
 
         //添加泛型
-        addGenericSignature(cb, method, method.getReturnType() == void.class,
-            MethodReflectInvoker.class);
+        addGenericSignature(cb, method, MethodReflectInvoker.class);
 
         // 生成无参构造方法
         cb.withMethod(ConstantDescs.INIT_NAME, MethodTypeDesc.of(ConstantDescs.CD_void),
@@ -194,7 +195,7 @@ public class ReflectMethodInvokerUtils {
   public static MethodReflectInvoker createLambdaMethodInvoker(Method method, boolean isStatic,
       boolean fallback) throws Throwable {
     if (isStatic) {
-      if (!FixedLambdaReflectUtils.isSupportFixLambda(method) && !fallback) {
+      if (FixedLambdaReflectUtils.isSupportFixLambda(method) && !fallback) {
         throw new IllegalArgumentException(
             "method with more than " + FixedLambdaReflectUtils.MAX_SUPPORT_PARAMS_COUNT
                 + " parameters is not supported");
@@ -212,7 +213,8 @@ public class ReflectMethodInvokerUtils {
    * @return
    * @throws Throwable
    */
-  public static MethodReflectInvoker createDynasticLambdaInvoker(Method method) throws Throwable {
+  public static MethodReflectInvoker createDynasticLambdaInvoker(Executable method)
+      throws Throwable {
     if (method == null) {
       throw new IllegalArgumentException("Method cannot be null");
     }
@@ -233,24 +235,39 @@ public class ReflectMethodInvokerUtils {
    * @return
    * @throws Throwable
    */
-  private static MethodReflectInvoker doCreateLambdaInvoker(Method method, Class<?> fnIf)
+  private static MethodReflectInvoker doCreateLambdaInvoker(Executable method, Class<?> fnIf)
       throws Throwable {
     Class<?> decl = method.getDeclaringClass();
 
-    // 1) 获取 Lookup
     MethodHandles.Lookup implLookup = MethodHandles.privateLookupIn(decl, MethodHandles.lookup());
+    final MethodHandle impl;
+    final int mods = method.getModifiers();
+    final boolean isConstructor;
+    final Class<?> returnClass;
+    final boolean isVoid;
+    final String samName;
+    if (method instanceof Method findMethod) {
+      impl = implLookup.unreflect(findMethod);
+      isConstructor = false;
+      returnClass = findMethod.getReturnType();
+      isVoid = returnClass == void.class;
+      samName = isVoid ? (Modifier.isStatic(mods) ? "acceptStatic" : "accept")
+          : (Modifier.isStatic(mods) ? "applyStatic" : "apply");
+    } else {
+      var constructor = (Constructor<?>) method;
+      impl = implLookup.unreflectConstructor(constructor);
+      isConstructor = true;
+      returnClass = decl;
+      isVoid = false;
+      samName = "applyStatic";
+    }
 
-    // 2) 获取方法实现
-    MethodHandle impl = implLookup.unreflect(method);
-    int mods = method.getModifiers();
-
-    // 3) 装配三个 MethodType
-    // invokedType: () -> BaseReflectLambda (使用BaseReflectLambda接口类型)
-    final var invokedType = methodType(fnIf);
+    //工厂类型(我们生成的接口)
+    final var factoryType = methodType(fnIf);
 
     // samMethodType: 抽象方法签名（接口上的 apply/accept：DeclaringClass + 参数列表）
     Class<?>[] samParams;
-    if (Modifier.isStatic(method.getModifiers())) {
+    if (Modifier.isStatic(method.getModifiers()) || isConstructor) {
       //静态方法不需要传入目标对象
       samParams = method.getParameterTypes();
     } else {
@@ -262,16 +279,10 @@ public class ReflectMethodInvokerUtils {
         System.arraycopy(method.getParameterTypes(), 0, samParams, 1, method.getParameterCount());
       }
     }
-    final var samMethodType = methodType(method.getReturnType(), samParams);
-
-    // 4) 选择 SAM 名称并创建 CallSite
-    boolean isVoid = method.getReturnType() == void.class;
-    // SAM方法应该是apply或accept，因为这是我们生成的函数式接口中的抽象方法
-    final String samName = isVoid ? (Modifier.isStatic(mods) ? "acceptStatic" : "accept")
-        : (Modifier.isStatic(mods) ? "applyStatic" : "apply");
+    final var samMethodType = methodType(returnClass, samParams);
 
     // 使用声明类的 lookup 而不是生成接口的 lookup，这样可以访问私有方法
-    final CallSite cs = LambdaMetafactory.metafactory(implLookup, samName, invokedType,
+    final CallSite cs = LambdaMetafactory.metafactory(implLookup, samName, factoryType,
         samMethodType, impl, samMethodType);
 
     // 5) 获取目标工厂并创建实例
@@ -284,12 +295,12 @@ public class ReflectMethodInvokerUtils {
    * @param method
    * @return
    */
-  public static Class<?> createReflectLambdaFunctionInterface(Method method) {
+  public static Class<?> createReflectLambdaFunctionInterface(Executable method) {
     if (method == null) {
       throw new IllegalArgumentException("method cannot be null");
     }
 
-    boolean isVoid = method.getReturnType() == void.class;
+    boolean isVoid = method instanceof Method method1 && method1.getReturnType() == void.class;
     Class<?> declaring = method.getDeclaringClass();
 
     //完整的类名
@@ -319,7 +330,7 @@ public class ReflectMethodInvokerUtils {
   /**
    * 使用 ClassFile API 生成函数式接口的字节码
    */
-  private static byte[] generateInterfaceBytecode(String fullClassName, Method method,
+  private static byte[] generateInterfaceBytecode(String fullClassName, Executable method,
       boolean isVoid) {
     ClassFile cf = ClassFile.of();
 
@@ -333,7 +344,7 @@ public class ReflectMethodInvokerUtils {
           .withSuperclass(ConstantDescs.CD_Object).withInterfaceSymbols(baseLambdaDesc);
 
       // 添加泛型签名信息
-      addGenericSignature(classBuilder, method, isVoid, MethodReflectInvoker.class);
+      addGenericSignature(classBuilder, method, MethodReflectInvoker.class);
 
       // 添加 @FunctionalInterface 注解
 //      addFunctionalInterfaceAnnotation(classBuilder);
@@ -370,9 +381,8 @@ public class ReflectMethodInvokerUtils {
    * @param method         目标方法
    * @param targetTypeDesc 目标对象类型描述符（泛型T）
    */
-  private static void generateDirectInvokeMethodWithGenerics(java.lang.classfile.ClassBuilder cb,
-      Method method, ClassDesc targetTypeDesc) {
-    Class<?> returnType = method.getReturnType();
+  private static void generateDirectInvokeMethodWithGenerics(ClassBuilder cb, Executable method,
+      ClassDesc targetTypeDesc) {
     Class<?>[] paramTypes = method.getParameterTypes();
 
     // 生成泛型擦除后的invoke方法: Object invoke(Object target, Object... args)
@@ -383,30 +393,43 @@ public class ReflectMethodInvokerUtils {
     cb.withMethod("invoke", erasedMethodTypeDesc, ClassFile.ACC_PUBLIC | ClassFile.ACC_VARARGS,
         mb -> mb.withCode(codeb -> {
 
-          // 如果是静态方法，不需要加载目标对象
-          if (!Modifier.isStatic(method.getModifiers())) {
-            // 加载目标对象并转换为具体类型T
-            codeb.aload(1).checkcast(targetTypeDesc);
-          }
+          if (method instanceof Constructor<?>) {
+            // 处理构造函数
+            codeb.new_(targetTypeDesc)     // 创建对象实例
+                .dup();                    // 复制引用用于构造函数调用
 
-          // 加载参数
-          loadParameters(codeb, paramTypes);
+            // 加载参数
+            loadParameters(codeb, paramTypes);
 
-          // 调用目标方法
-          if (Modifier.isStatic(method.getModifiers())) {
-            codeb.invokestatic(targetTypeDesc, method.getName(), getMethodTypeDesc(method));
+            // 调用构造函数
+            codeb.invokespecial(targetTypeDesc, ConstantDescs.INIT_NAME, getMethodTypeDesc(method));
+
           } else {
-            Class<?> declaringClass = method.getDeclaringClass();
-            if (declaringClass.isInterface()) {
-              // 接口方法使用 invokeinterface
-              codeb.invokeinterface(targetTypeDesc, method.getName(), getMethodTypeDesc(method));
-            } else {
-              // 普通类方法使用 invokevirtual
-              codeb.invokevirtual(targetTypeDesc, method.getName(), getMethodTypeDesc(method));
+            // 如果是静态方法，不需要加载目标对象
+            if (!Modifier.isStatic(method.getModifiers())) {
+              // 加载目标对象并转换为具体类型T
+              codeb.aload(1).checkcast(targetTypeDesc);
             }
-          }
 
-          ClassFileUtils.generateReturnValueBoxing(codeb, returnType);
+            // 加载参数
+            loadParameters(codeb, paramTypes);
+
+            // 调用目标方法
+            if (Modifier.isStatic(method.getModifiers())) {
+              codeb.invokestatic(targetTypeDesc, method.getName(), getMethodTypeDesc(method));
+            } else {
+              Class<?> declaringClass = method.getDeclaringClass();
+              if (declaringClass.isInterface()) {
+                // 接口方法使用 invokeinterface
+                codeb.invokeinterface(targetTypeDesc, method.getName(), getMethodTypeDesc(method));
+              } else {
+                // 普通类方法使用 invokevirtual
+                codeb.invokevirtual(targetTypeDesc, method.getName(), getMethodTypeDesc(method));
+              }
+            }
+
+            ClassFileUtils.generateReturnValueBoxing(codeb, ((Method) method).getReturnType());
+          }
 
           codeb.areturn();
         }));
@@ -505,8 +528,13 @@ public class ReflectMethodInvokerUtils {
    * @param method 目标方法
    * @return 方法类型描述符
    */
-  private static MethodTypeDesc getMethodTypeDesc(Method method) {
-    ClassDesc returnType = getClassDesc(method.getReturnType());
+  private static MethodTypeDesc getMethodTypeDesc(Executable method) {
+    ClassDesc returnType;
+    if (method instanceof Method findMethod) {
+      returnType = getClassDesc(findMethod.getReturnType());
+    } else {
+      returnType = ConstantDescs.CD_void;
+    }
     ClassDesc[] paramTypes = new ClassDesc[method.getParameterTypes().length];
     for (int i = 0; i < paramTypes.length; i++) {
       paramTypes[i] = getClassDesc(method.getParameterTypes()[i]);

@@ -10,6 +10,7 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodHandles.Lookup;
 import java.lang.invoke.MethodType;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Executable;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
@@ -39,7 +40,7 @@ public class FixedLambdaReflectUtils {
    * @return
    */
   public static boolean isSupportFixLambda(Executable method) {
-    return method.getParameterCount() <= MAX_SUPPORT_PARAMS_COUNT;
+    return method.getParameterCount() > MAX_SUPPORT_PARAMS_COUNT;
   }
 
   public interface BiConsumer0<T> extends MethodReflectInvoker<T, Object> {
@@ -1196,17 +1197,21 @@ public class FixedLambdaReflectUtils {
     }
   }
 
-  public static MethodReflectInvoker createLambda(Method findMethod) throws Throwable {
+  public static MethodReflectInvoker createLambda(Executable findMethod) throws Throwable {
 
-    if (!isSupportFixLambda(findMethod)) {
+    if (isSupportFixLambda(findMethod)) {
       throw new IllegalArgumentException(
           "Method " + findMethod + " param count > " + MAX_SUPPORT_PARAMS_COUNT);
     }
 
+    //是否是构造方法
+    boolean isConstructor = findMethod instanceof Constructor;
+
     // step1: method => methodHandle
     Lookup lookup = MethodHandles.privateLookupIn(findMethod.getDeclaringClass(),
         MethodHandles.lookup());
-    MethodHandle handle = lookup.unreflect(findMethod);
+    MethodHandle handle = isConstructor ? lookup.unreflectConstructor((Constructor<?>) findMethod)
+        : lookup.unreflect((Method) findMethod);
 
     // step2: 获取方法对应的Lambda的包装类和方法
     final LambdaWrapper lambdaWrapper = getLambdaWrapper(findMethod);
@@ -1228,7 +1233,7 @@ public class FixedLambdaReflectUtils {
           "MethodReflectInvoker create fail for method: " + findMethod);
     }
 
-    if (Modifier.isStatic(findMethod.getModifiers())) {
+    if (Modifier.isStatic(findMethod.getModifiers()) || isConstructor) {
       //做适配,防止调用静态方法的时候第第一个参数用户乱传导致异常问题
       return new StaticFixedLambdaMethodReflectInvoker(findMethod, invoker);
     }
@@ -1236,8 +1241,9 @@ public class FixedLambdaReflectUtils {
     return invoker;
   }
 
-  private static LambdaWrapper getLambdaWrapper(Method method) {
-    Class<?> returnType = method.getReturnType();
+  private static LambdaWrapper getLambdaWrapper(Executable method) {
+    Class<?> returnType = method instanceof Constructor ? method.getDeclaringClass()
+        : ((Method) method).getReturnType();
     int parameterCount = method.getParameterCount();
     LambdaWrapper lambdaWrapper;
     try {
@@ -1263,19 +1269,21 @@ public class FixedLambdaReflectUtils {
     return lambdaWrapper;
   }
 
-  private static CallSite createCallSite(Method method, Lookup lookup, LambdaWrapper lambdaWrapper,
-      MethodHandle handle) {
+  private static CallSite createCallSite(Executable method, Lookup lookup,
+      LambdaWrapper lambdaWrapper, MethodHandle handle) {
     try {
       final Class<?> lambdaClass = lambdaWrapper.classz;
       final Method lambdaMethod;
       final MethodType lambdaMethodType;
-      if (Modifier.isStatic(method.getModifiers())) {
+      final boolean isConstructor = method instanceof Constructor;
+      if (Modifier.isStatic(method.getModifiers()) || isConstructor) {
         lambdaMethod = lambdaWrapper.staticMethod;
-        lambdaMethodType = methodType(lambdaMethod.getReturnType(),
+        lambdaMethodType = methodType(
+            isConstructor ? method.getDeclaringClass() : lambdaMethod.getReturnType(),
             boxPrimitiveTypes(method.getParameterTypes()));
       } else {
         lambdaMethod = lambdaWrapper.method;
-        lambdaMethodType = methodType(method.getReturnType(), method.getDeclaringClass(),
+        lambdaMethodType = methodType(((Method) method).getReturnType(), method.getDeclaringClass(),
             boxPrimitiveTypes(method.getParameterTypes()));
       }
       return LambdaMetafactory.metafactory(lookup, lambdaMethod.getName(), methodType(lambdaClass),
