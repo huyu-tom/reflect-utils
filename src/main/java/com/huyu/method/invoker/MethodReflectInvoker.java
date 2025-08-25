@@ -20,9 +20,9 @@ public interface MethodReflectInvoker<T, R> {
    * 3. 静态方法第一个参数传null即可
    * </pre>
    *
-   * @param target
-   * @param args
-   * @return
+   * @param target 实例方法为目标对象,静态方法和构造方法传入null或者此参数无效
+   * @param args   方法的参数
+   * @return 返回值 如果调用方法无返回值,返回的是null
    */
   R invoke(T target, Object... args);
 

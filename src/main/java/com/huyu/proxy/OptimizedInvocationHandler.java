@@ -34,7 +34,6 @@ public class OptimizedInvocationHandler implements InvocationHandler {
 
   private static final VarHandle LAMBDA_CACHE_VARHANDLE;
 
-
   static {
     try {
       LAMBDA_CACHE_VARHANDLE = MethodHandles.lookup()
