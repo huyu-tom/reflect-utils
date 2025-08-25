@@ -49,20 +49,20 @@ public class ReflectFieldInvokerUtils {
       }
     }
 
-    // 2. 尝试 VarHandle 模式 (需要JDK1.9以上)
-    if (isVarHandleAvailable()) {
+    // 2. 对于非私有字段或私有静态字段，可以使用ClassFile API
+    if (!isPrivateField && isSupportClassFileAPI()) {
       try {
-        return createVarHandleInvoker(field);
+        //需要通过ClassFile API 创建 FieldReflectInvoker实现类
+        return createDirectInvoker(field);
       } catch (Throwable e) {
 
       }
     }
 
-    // 3. 对于非私有字段或私有静态字段，可以使用ClassFile API
-    if ((!isPrivateField || (isPrivateField && isStaticField)) && isSupportClassFileAPI()) {
+    // 3. 尝试 VarHandle 模式 (需要JDK1.9以上)
+    if (isVarHandleAvailable()) {
       try {
-        //需要通过ClassFile API 创建 FieldReflectInvoker实现类
-        return createDirectInvoker(field);
+        return createVarHandleInvoker(field);
       } catch (Throwable e) {
 
       }
@@ -100,20 +100,20 @@ public class ReflectFieldInvokerUtils {
       throw new IllegalArgumentException("Field cannot be null");
     }
 
-    boolean isPrivateField = field.accessFlags().contains(AccessFlag.PRIVATE);
-
-    //因为通过classFile生成静态内部类就可以访问私有静态属性，但是实际还是不能访问
-    boolean isStaticField = field.accessFlags().contains(AccessFlag.STATIC);
-
     // 只有私有实例字段不能使用直接访问器，私有静态字段可以通过静态内部类访问
+    final boolean isPrivateField = field.accessFlags().contains(AccessFlag.PRIVATE);
     if (isPrivateField) {
       throw new IllegalArgumentException(
           "Private instance field cannot use ClassFile API invoker: " + field);
     }
 
+    //不支持classFile API
     if (!isSupportClassFileAPI()) {
       throw new UnsupportedOperationException("ClassFile API is not available on this JDK version");
     }
+
+    //因为通过classFile生成静态内部类就可以访问私有静态属性，但是实际还是不能访问(无权限)
+    boolean isStaticField = field.accessFlags().contains(AccessFlag.STATIC);
 
     try {
       Class<?> generatedClass = generateFieldInvokerClass(field);

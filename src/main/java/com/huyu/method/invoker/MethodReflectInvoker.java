@@ -13,10 +13,12 @@ public interface MethodReflectInvoker<T, R> {
 
   /**
    *
-   * 调用方法(静态方法,实例方法)
-   * <p>
-   * 使用方式和Method的invoke方法一样
-   * </p>
+   * 调用方法(静态方法,实例方法,构造方法)
+   * <pre>
+   * 1. 实例方法跟Method反射的invoke方法一样
+   * 2. 构造方法第一个参数传null即可
+   * 3. 静态方法第一个参数传null即可
+   * </pre>
    *
    * @param target
    * @param args

@@ -10,6 +10,7 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodHandles.Lookup;
 import java.lang.invoke.MethodType;
+import java.lang.reflect.Executable;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.Arrays;
@@ -37,7 +38,7 @@ public class FixedLambdaReflectUtils {
    * @param method
    * @return
    */
-  public static boolean isSupportFixLambda(Method method) {
+  public static boolean isSupportFixLambda(Executable method) {
     return method.getParameterCount() <= MAX_SUPPORT_PARAMS_COUNT;
   }
 
