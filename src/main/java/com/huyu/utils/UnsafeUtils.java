@@ -34,4 +34,8 @@ public class UnsafeUtils {
   public static boolean isSupportUnsafe() {
     return IS_SUPPORTED;
   }
+
+  public static Object newInstance(Class<?> clazz) throws InstantiationException {
+    return getUnsafe().allocateInstance(clazz);
+  }
 }

@@ -15,17 +15,13 @@
  */
 package com.huyu.benchmark.method;
 
-import com.huyu.field.ReflectFieldInvokerUtils;
-import com.huyu.field.invoker.FieldReflectInvoker;
 import com.huyu.method.ReflectMethodInvokerUtils;
 import com.huyu.method.invoker.MethodReflectInvoker;
 import com.huyu.service.XxService;
 import com.huyu.service.impl.XxServiceImpl;
-import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.concurrent.TimeUnit;
-
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
 import org.openjdk.jmh.annotations.Measurement;
@@ -58,11 +54,6 @@ public class MethodBenchmark {
   MethodReflectInvoker emptyParamStaticLambdaInvoker;
   MethodReflectInvoker emptyParamLambdaInvoker;
 
-  FieldReflectInvoker unsafeInvoker;
-  FieldReflectInvoker varHandleInvoker;
-  FieldReflectInvoker directInvoker;
-  FieldReflectInvoker fieldInvoker;
-
 
   @Setup
   public void setup() throws Throwable {
@@ -93,16 +84,6 @@ public class MethodBenchmark {
         emptyParamMethod, true);
     emptyParamLambdaInvoker = ReflectMethodInvokerUtils.createLambdaMethodInvoker(emptyParamMethod,
         false);
-
-    //属性值设置
-    Field field = target.getClass().getDeclaredField("cc");
-    field.setAccessible(true);
-
-    //unsafe
-    unsafeInvoker = ReflectFieldInvokerUtils.createUnsafeInvoker(field);
-    varHandleInvoker = ReflectFieldInvokerUtils.createVarHandleInvoker(field);
-    directInvoker = ReflectFieldInvokerUtils.createDirectInvoker(field);
-    fieldInvoker = ReflectFieldInvokerUtils.createFieldInvoker(field);
   }
 
   /**

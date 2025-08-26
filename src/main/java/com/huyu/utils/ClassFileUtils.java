@@ -481,7 +481,7 @@ public class ClassFileUtils {
    * @return
    */
   private static boolean isJavaPackage(Class<?> declaring) {
-    return declaring.getName().startsWith("java.") || declaring.getName().startsWith("javax")
-        || declaring.getName().startsWith("sun");
+    return declaring.getName().startsWith("java.") || declaring.getName().startsWith("javax.")
+        || declaring.getName().startsWith("sun.");
   }
 }

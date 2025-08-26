@@ -13,6 +13,7 @@ import com.huyu.method.invoker.MethodReflectInvoker;
 import com.huyu.method.invoker.impl.DefaultMethodReflectInvoker;
 import com.huyu.utils.AotUtils;
 import com.huyu.utils.ClassFileUtils;
+import com.huyu.utils.UnsafeUtils;
 import java.lang.classfile.ClassBuilder;
 import java.lang.classfile.ClassFile;
 import java.lang.classfile.CodeBuilder;
@@ -27,6 +28,7 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Executable;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import sun.misc.Unsafe;
 
 
 /**
@@ -151,7 +153,11 @@ public class ReflectMethodInvokerUtils {
       existingClass = loadClass(classBytes, fullClassName, method.getDeclaringClass());
     }
 
-    return (MethodReflectInvoker) existingClass.getDeclaredConstructor().newInstance();
+    try {
+      return (MethodReflectInvoker) UnsafeUtils.newInstance(existingClass);
+    } catch (Throwable e) {
+      return (MethodReflectInvoker) existingClass.getDeclaredConstructor().newInstance();
+    }
   }
 
 

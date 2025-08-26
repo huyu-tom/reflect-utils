@@ -18,6 +18,7 @@ import java.lang.constant.MethodTypeDesc;
 import java.lang.reflect.AccessFlag;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.util.Optional;
 
 
@@ -115,13 +116,17 @@ public class ReflectFieldInvokerUtils {
     //因为通过classFile生成静态内部类就可以访问私有静态属性，但是实际还是不能访问(无权限)
     boolean isStaticField = field.accessFlags().contains(AccessFlag.STATIC);
 
+    Class<?> generatedClass = generateFieldInvokerClass(field);
+
     try {
-      Class<?> generatedClass = generateFieldInvokerClass(field);
-      Constructor<?> declaredConstructor = generatedClass.getDeclaredConstructor();
-      return (T) declaredConstructor.newInstance();
-    } catch (Exception e) {
-      throw new RuntimeException(
-          "Failed to create ClassFile-based field invoker for field: " + field, e);
+      return (T) UnsafeUtils.newInstance(generatedClass);
+    } catch (Throwable e) {
+      try {
+        Constructor<?> declaredConstructor = generatedClass.getDeclaredConstructor();
+        return (T) declaredConstructor.newInstance();
+      } catch (Throwable ex) {
+        throw new RuntimeException(ex);
+      }
     }
   }
 
