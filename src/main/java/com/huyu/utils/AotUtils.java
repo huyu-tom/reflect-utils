@@ -1,5 +1,10 @@
 package com.huyu.utils;
 
+/**
+ * copy from spring framework
+ *
+ * @author huyu
+ */
 public class AotUtils {
 
   // See https://github.com/oracle/graal/blob/master/sdk/src/org.graalvm.nativeimage/src/org/graalvm/nativeimage/ImageInfo.java

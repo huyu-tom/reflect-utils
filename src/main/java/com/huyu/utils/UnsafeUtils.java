@@ -35,6 +35,14 @@ public class UnsafeUtils {
     return IS_SUPPORTED;
   }
 
+
+  /**
+   * 注意: 分配一个实例，但不运行任何构造函数。如果还没有初始化课程
+   *
+   * @param clazz
+   * @return
+   * @throws InstantiationException
+   */
   public static Object newInstance(Class<?> clazz) throws InstantiationException {
     return getUnsafe().allocateInstance(clazz);
   }

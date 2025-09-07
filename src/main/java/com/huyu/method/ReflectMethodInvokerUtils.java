@@ -48,24 +48,24 @@ public class ReflectMethodInvokerUtils {
    * @throws Throwable 当创建实例失败时抛出
    */
   @SuppressWarnings({"unchecked", "rawtypes"})
-  public static <T extends MethodReflectInvoker> T createMethodInvoker(Method method) {
+  public static <T extends MethodReflectInvoker> T createMethodInvoker(Executable method) {
     if (method == null) {
       throw new IllegalArgumentException("Method cannot be null");
-    }
-
-    // 非私有方法,并且支持ClassFile API
-    if (isLoopMethod(method) && ClassFileUtils.isSupportClassFileAPI()) {
-      try {
-        return (T) createDirectMethodInvoker(method);
-      } catch (Throwable e) {
-        //忽略
-      }
     }
 
     //AOT模式完全不支持lambda的方式调用
     if (!AotUtils.inNativeImage()) {
       try {
         return (T) createLambdaMethodInvoker(method);
+      } catch (Throwable e) {
+        //忽略
+      }
+    }
+
+    // 非私有方法,并且支持ClassFile API
+    if (isLoopMethod(method) && ClassFileUtils.isSupportClassFileAPI()) {
+      try {
+        return (T) createDirectMethodInvoker(method);
       } catch (Throwable e) {
         //忽略
       }
@@ -168,7 +168,7 @@ public class ReflectMethodInvokerUtils {
    * @return
    * @throws Throwable
    */
-  public static MethodReflectInvoker createLambdaMethodInvoker(Method method) throws Throwable {
+  public static MethodReflectInvoker createLambdaMethodInvoker(Executable method) throws Throwable {
     return createLambdaMethodInvoker(method, true, true);
   }
 
@@ -198,7 +198,7 @@ public class ReflectMethodInvokerUtils {
    * @throws Throwable 创建失败时抛出
    */
   @SuppressWarnings("rawtypes")
-  public static MethodReflectInvoker createLambdaMethodInvoker(Method method, boolean isStatic,
+  public static MethodReflectInvoker createLambdaMethodInvoker(Executable method, boolean isStatic,
       boolean fallback) throws Throwable {
     if (isStatic) {
       if (FixedLambdaReflectUtils.isSupportFixLambda(method) && !fallback) {
@@ -372,7 +372,7 @@ public class ReflectMethodInvokerUtils {
    * @throws Throwable 创建失败时抛出
    */
   @SuppressWarnings("rawtypes")
-  public static MethodReflectInvoker createReflectMethodInvoker(Method method) {
+  public static MethodReflectInvoker createReflectMethodInvoker(Executable method) {
     if (method == null) {
       throw new IllegalArgumentException("method cannot be null");
     }

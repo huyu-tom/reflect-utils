@@ -118,15 +118,18 @@ public class ReflectFieldInvokerUtils {
 
     Class<?> generatedClass = generateFieldInvokerClass(field);
 
-    try {
-      return (T) UnsafeUtils.newInstance(generatedClass);
-    } catch (Throwable e) {
+    if (UnsafeUtils.isSupportUnsafe()) {
       try {
-        Constructor<?> declaredConstructor = generatedClass.getDeclaredConstructor();
-        return (T) declaredConstructor.newInstance();
-      } catch (Throwable ex) {
-        throw new RuntimeException(ex);
+        return (T) UnsafeUtils.newInstance(generatedClass);
+      } catch (InstantiationException e) {
+        //忽略
       }
+    }
+    try {
+      Constructor<?> declaredConstructor = generatedClass.getDeclaredConstructor();
+      return (T) declaredConstructor.newInstance();
+    } catch (Throwable ex) {
+      throw new RuntimeException(ex);
     }
   }
 
